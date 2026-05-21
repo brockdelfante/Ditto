@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+// In production, the frontend is served from the same domain as the backend
+const API_BASE = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_BASE || 'http://localhost:3001')
+  : window.location.origin;
 
 function App() {
   const [messages, setMessages] = useState([]);

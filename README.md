@@ -11,23 +11,25 @@ A full-stack web application that provides a chat interface for staff to interac
 
 ## Deployment on Render
 
-1. Create a new "Blueprint" on Render using the `render.yaml` file.
-2. Provide the following environment variables:
+1. Create a new **Web Service** on Render.
+2. Connect your GitHub repository.
+3. Use the following settings:
+   - **Runtime**: Node
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+4. Provide the following environment variables:
    - `HUBSPOT_CLIENT_ID`
    - `HUBSPOT_CLIENT_SECRET`
    - `OPENROUTER_API_KEY`
-   - `REDIRECT_URI`: Set this to `https://<your-backend-url>/auth/hubspot/callback` after the backend is first created.
-3. Update your HubSpot App's Redirect URL in the HubSpot Developer Portal to match your `REDIRECT_URI`.
+   - `SESSION_SECRET` (random string)
+   - `REDIRECT_URI`: Set this to `https://<your-render-url>/auth/hubspot/callback` after the service is created.
+5. Update your HubSpot App's Redirect URL in the HubSpot Developer Portal to match your `REDIRECT_URI`.
 
 ## Local Development
 
-### Backend
-1. `cd backend`
-2. `npm install`
-3. Create a `.env` file (see `.env.example`)
-4. `node server.js`
+1. `npm install` (installs root, backend, and frontend dependencies)
+2. Create a `backend/.env` file based on `backend/.env.example`
+3. `npm start` (runs the backend, which serves the built frontend)
 
-### Frontend
-1. `cd frontend`
-2. `npm install`
-3. `npm run dev`
+For frontend development with HMR:
+1. `cd frontend && npm run dev`
