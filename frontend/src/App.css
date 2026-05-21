@@ -1,0 +1,106 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 800px;
+  margin: 0 auto;
+  font-family: sans-serif;
+}
+
+header {
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #ccc;
+}
+
+.chat-window {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  background: #f9f9f9;
+}
+
+.message {
+  margin-bottom: 1rem;
+  display: flex;
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 70%;
+  padding: 0.8rem;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.message.user .bubble {
+  background: #007bff;
+  color: white;
+}
+
+.input-area {
+  padding: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  border-top: 1px solid #ccc;
+}
+
+input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.mic-btn.recording {
+  background: red;
+  color: white;
+}
+
+.proposal-ui {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #eee;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.proposal-ui pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: #fff;
+  padding: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+button {
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background: #28a745;
+  color: white;
+}
+
+.btn-cancel {
+  background: #dc3545;
+}
+
+.btn-connect {
+  background: #ff7a59;
+}
+
+.btn-connected {
+  background: #28a745;
+}

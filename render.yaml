@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: hubspot-mcp-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: HUBSPOT_CLIENT_ID
+        sync: false
+      - key: HUBSPOT_CLIENT_SECRET
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: REDIRECT_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+
+  - type: static
+    name: hubspot-mcp-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    publishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE
+        fromService:
+          name: hubspot-mcp-backend
+          type: web
+          property: host
