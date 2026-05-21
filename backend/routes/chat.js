@@ -18,7 +18,7 @@ router.post('/chat', async (req, res) => {
     }
 
     try {
-        const hubspot = new HubSpotMCPClient(tokens.access_token);
+        const hubspot = new HubSpotMCPClient(req.session);
         const tools = await hubspot.listTools();
 
         const messages = [
@@ -40,8 +40,8 @@ router.post('/chat', async (req, res) => {
 
         res.json({ reply: response.content });
     } catch (error) {
-        console.error('Chat error:', error);
-        res.status(500).json({ error: 'Failed to process chat' });
+        console.error('Chat error:', error.message);
+        res.status(500).json({ error: 'Failed to process chat: ' + error.message });
     }
 });
 
@@ -61,7 +61,7 @@ router.post('/execute', async (req, res) => {
     }
 
     try {
-        const hubspot = new HubSpotMCPClient(tokens.access_token);
+        const hubspot = new HubSpotMCPClient(req.session);
         const results = [];
 
         for (const toolCall of toolsToCall) {
@@ -74,8 +74,8 @@ router.post('/execute', async (req, res) => {
             results
         });
     } catch (error) {
-        console.error('Execution error:', error);
-        res.status(500).json({ error: 'Failed to execute actions' });
+        console.error('Execution error:', error.message);
+        res.status(500).json({ error: 'Failed to execute actions: ' + error.message });
     }
 });
 

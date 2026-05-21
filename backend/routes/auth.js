@@ -21,7 +21,6 @@ router.get('/hubspot', (req, res) => {
 
     req.session.codeVerifier = codeVerifier;
 
-    // Using the specific HubSpot MCP OAuth endpoint
     const authUrl = `https://mcp-ap1.hubspot.com/oauth/authorize/user` +
         `?client_id=${encodeURIComponent(CLIENT_ID)}` +
         `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
@@ -40,8 +39,6 @@ router.get('/hubspot/callback', async (req, res) => {
     }
 
     try {
-        // Token exchange endpoint is usually standard, but let's be careful.
-        // The documentation mentions "exchange your authorization code for access and refresh tokens".
         const response = await axios.post('https://api.hubapi.com/oauth/v1/token', new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: CLIENT_ID,
@@ -55,7 +52,10 @@ router.get('/hubspot/callback', async (req, res) => {
             }
         });
 
-        req.session.tokens = response.data;
+        req.session.tokens = {
+            ...response.data,
+            expiry: Date.now() + (response.data.expires_in * 1000)
+        };
         res.send('HubSpot connected successfully! You can close this tab and return to the chat.');
     } catch (error) {
         console.error('Error exchanging code for tokens:', error.response?.data || error.message);

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 
-// In production, the frontend is served from the same domain as the backend
 const API_BASE = import.meta.env.DEV
   ? (import.meta.env.VITE_API_BASE || 'http://localhost:3001')
   : window.location.origin;
@@ -49,9 +48,8 @@ function App() {
 
       if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply, proposal: data.proposal, executionId: data.executionId }]);
-        if (data.proposal) {
-          setPendingAction({ executionId: data.executionId, proposal: data.proposal });
-        }
+      } else if (data.error) {
+        setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error: Could not connect to backend.' }]);
@@ -59,7 +57,7 @@ function App() {
   };
 
   const handleExecute = async (executionId, approved) => {
-    setPendingAction(null);
+    setMessages(prev => [...prev, { role: 'assistant', content: approved ? 'Executing actions...' : 'Cancelling...' }]);
     try {
       const res = await fetch(`${API_BASE}/api/execute`, {
         method: 'POST',
@@ -92,27 +90,55 @@ function App() {
     recognition.start();
   };
 
+  const formatProposal = (toolCalls) => {
+    return toolCalls.map((tc, idx) => {
+      const args = JSON.parse(tc.function.arguments);
+      let summary = tc.function.name.replace('hubspot_', '').replace('_', ' ');
+      summary = summary.charAt(0).toUpperCase() + summary.slice(1);
+
+      const details = Object.entries(args)
+        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join(', ');
+
+      return (
+        <div key={idx} className="tool-proposal">
+          <strong>{summary}</strong>
+          <p>{details}</p>
+        </div>
+      );
+    });
+  };
+
   return (
     <div className="app-container">
       <header>
         <h1>HubSpot Assistant</h1>
-        <button
-          onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
-          className={isConnected ? 'btn-connected' : 'btn-connect'}
-        >
-          {isConnected ? 'HubSpot Connected' : 'Connect HubSpot'}
-        </button>
+        <div className="header-actions">
+           <button
+            onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
+            className={isConnected ? 'btn-connected' : 'btn-connect'}
+          >
+            {isConnected ? 'Connected' : 'Connect HubSpot'}
+          </button>
+        </div>
       </header>
 
       <div className="chat-window">
+        {messages.length === 0 && (
+          <div className="welcome">
+            <h2>Welcome!</h2>
+            <p>I can help you manage your HubSpot CRM. Try saying "Create a contact for Alice at alice@example.com".</p>
+          </div>
+        )}
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
             <div className="bubble">
-              {m.content}
+              <div className="text-content">{m.content}</div>
               {m.proposal && (
                 <div className="proposal-ui">
-                  <p><strong>Proposed Actions:</strong></p>
-                  <pre>{JSON.stringify(m.proposal, null, 2)}</pre>
+                  <div className="proposal-list">
+                    {formatProposal(m.proposal)}
+                  </div>
                   <div className="actions">
                     <button onClick={() => handleExecute(m.executionId, true)}>Approve</button>
                     <button onClick={() => handleExecute(m.executionId, false)} className="btn-cancel">Cancel</button>
@@ -129,16 +155,18 @@ function App() {
         <button
           onClick={startVoice}
           className={`mic-btn ${isRecording ? 'recording' : ''}`}
+          title="Voice Input"
         >
-          🎤
+          {isRecording ? 'Listening...' : '🎤'}
         </button>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyPress={e => e.key === 'Enter' && handleSend()}
           placeholder="Type a message..."
+          disabled={isRecording}
         />
-        <button onClick={() => handleSend()}>Send</button>
+        <button onClick={() => handleSend()} disabled={!input.trim() || isRecording}>Send</button>
       </div>
     </div>
   );

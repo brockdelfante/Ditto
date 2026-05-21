@@ -1,30 +1,60 @@
+:root {
+  --hubspot-orange: #ff7a59;
+  --hubspot-dark: #33475b;
+  --bg-light: #f5f8fa;
+  --white: #ffffff;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-light);
+  color: var(--hubspot-dark);
+}
+
 .app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
-  font-family: sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--white);
+  box-shadow: 0 0 20px rgba(0,0,0,0.05);
 }
 
 header {
-  padding: 1rem;
+  padding: 1rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #ccc;
+  background: var(--hubspot-dark);
+  color: var(--white);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.5rem;
 }
 
 .chat-window {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
-  background: #f9f9f9;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: var(--bg-light);
+}
+
+.welcome {
+  text-align: center;
+  margin-top: 5rem;
+  color: #7c98b6;
 }
 
 .message {
-  margin-bottom: 1rem;
   display: flex;
+  width: 100%;
 }
 
 .message.user {
@@ -32,75 +62,154 @@ header {
 }
 
 .bubble {
-  max-width: 70%;
-  padding: 0.8rem;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  max-width: 80%;
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  line-height: 1.5;
+}
+
+.message.assistant .bubble {
+  background: var(--white);
+  border-bottom-left-radius: 2px;
 }
 
 .message.user .bubble {
-  background: #007bff;
-  color: white;
-}
-
-.input-area {
-  padding: 1rem;
-  display: flex;
-  gap: 0.5rem;
-  border-top: 1px solid #ccc;
-}
-
-input {
-  flex: 1;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-.mic-btn.recording {
-  background: red;
-  color: white;
+  background: var(--hubspot-orange);
+  color: var(--white);
+  border-bottom-right-radius: 2px;
 }
 
 .proposal-ui {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: #eee;
-  border-radius: 4px;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #eaf0f6;
+  border-radius: 8px;
+  border-left: 4px solid var(--hubspot-orange);
+}
+
+.proposal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.tool-proposal {
   font-size: 0.9rem;
 }
 
-.proposal-ui pre {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  background: #fff;
-  padding: 0.5rem;
+.tool-proposal strong {
+  display: block;
+  color: var(--hubspot-dark);
+  margin-bottom: 0.2rem;
+}
+
+.tool-proposal p {
+  margin: 0;
+  color: #516f90;
+  font-family: monospace;
+  background: rgba(255,255,255,0.5);
+  padding: 0.3rem;
+  border-radius: 4px;
 }
 
 .actions {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.8rem;
+}
+
+.input-area {
+  padding: 1.5rem 2rem;
+  display: flex;
+  gap: 1rem;
+  background: var(--white);
+  border-top: 1px solid #dfe3eb;
+}
+
+input {
+  flex: 1;
+  padding: 0.8rem 1.2rem;
+  border: 1px solid #cbd6e2;
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input:focus {
+  border-color: var(--hubspot-orange);
+}
+
+input:disabled {
+  background: #f5f8fa;
 }
 
 button {
   cursor: pointer;
-  padding: 0.5rem 1rem;
+  padding: 0.6rem 1.5rem;
   border: none;
-  border-radius: 4px;
-  background: #28a745;
-  color: white;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
 }
 
-.btn-cancel {
-  background: #dc3545;
+button:hover {
+  opacity: 0.9;
+}
+
+button:disabled {
+  background: #cbd6e2;
+  cursor: not-allowed;
+}
+
+.mic-btn {
+  background: #f5f8fa;
+  color: var(--hubspot-dark);
+  border: 1px solid #cbd6e2;
+  width: 50px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.mic-btn.recording {
+  background: #ffede6;
+  border-color: var(--hubspot-orange);
+  color: var(--hubspot-orange);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 .btn-connect {
-  background: #ff7a59;
+  background: var(--hubspot-orange);
+  color: var(--white);
 }
 
 .btn-connected {
-  background: #28a745;
+  background: #00a38d;
+  color: var(--white);
+}
+
+.btn-cancel {
+  background: #f5f8fa;
+  color: var(--hubspot-dark);
+  border: 1px solid #cbd6e2;
+}
+
+.actions button {
+  flex: 1;
+}
+
+.actions button:first-child {
+  background: #00a38d;
+  color: var(--white);
 }

@@ -9,7 +9,17 @@ async function getChatCompletion(messages, tools = []) {
             messages: [
                 {
                     role: 'system',
-                    content: 'You are a helpful staff assistant with access to HubSpot CRM. When a user asks you to perform an action in HubSpot, use the provided tools. ALWAYS explain what you are going to do before calling a tool.'
+                    content: `You are a professional HubSpot Staff Assistant.
+Your goal is to help users manage their CRM data efficiently.
+You have access to the HubSpot MCP server which provides tools for Contacts, Companies, Deals, etc.
+
+GUIDELINES:
+1. When a user asks to perform an action (e.g., "Create a contact"), identify the correct tool and parameters.
+2. ALWAYS provide a brief, friendly natural language response explaining what you are about to do before calling the tool.
+3. If information is missing (like an email for a contact), ask the user for it.
+4. For associations (e.g., associating a contact with a company), look for tools like 'manage_crm_objects' or 'search_crm_objects' to find IDs first if they aren't provided.
+5. Use 'search_crm_objects' to find existing records before creating duplicates if appropriate.
+6. Your responses should be concise and helpful.`
                 },
                 ...messages
             ]
@@ -30,11 +40,15 @@ async function getChatCompletion(messages, tools = []) {
         const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', payload, {
             headers: {
                 'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                'HTTP-Referer': 'https://render.com', // Replace with your actual site URL
+                'HTTP-Referer': 'https://render.com',
                 'X-Title': 'HubSpot Staff Assistant',
                 'Content-Type': 'application/json'
             }
         });
+
+        if (!response.data.choices || response.data.choices.length === 0) {
+            throw new Error('No completion choices returned from OpenRouter');
+        }
 
         return response.data.choices[0].message;
     } catch (error) {
