@@ -8,45 +8,94 @@ const API_BASE = import.meta.env.DEV
 const STORAGE_KEY = 'ditto_chat_history';
 const REJECTION_KEYWORDS = ['no', 'cancel', 'stop', "don't", 'nope', 'nevermind', 'never mind', 'abort', 'skip', 'forget it'];
 
+// ── Formatters ────────────────────────────────────────────────────────────
+
+function fmtNum(n) {
+  if (n === null || n === undefined) return '—';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`;
+  return String(n);
+}
+
+function fmtCur(n) {
+  if (n === null || n === undefined || n === 0) return '$0';
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`;
+  return `$${n}`;
+}
+
+function fmtPct(n) {
+  if (n === null || n === undefined) return '—';
+  return `${n}%`;
+}
+
 function timeAgo(ts) {
   if (!ts) return '';
   const diff = Math.floor((Date.now() - ts) / 60000);
   if (diff < 1) return 'just now';
   if (diff < 60) return `${diff}m ago`;
-  const h = Math.floor(diff / 60);
-  return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`;
+  return `${Math.floor(diff / 60)}h ago`;
 }
 
-function DashboardCard({ title, items, renderItem, emptyMsg, loading }) {
+// ── Trend badge ───────────────────────────────────────────────────────────
+
+function Trend({ change, inverse = false, isPoints = false }) {
+  if (change === null || change === undefined) return null;
+  const good = inverse ? change < 0 : change > 0;
+  const cls = good ? 'trend-up' : change === 0 ? 'trend-flat' : 'trend-down';
+  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '—';
+  const label = change === 0 ? '0%' : `${Math.abs(change)}${isPoints ? 'pp' : '%'}`;
+  return <span className={`trend ${cls}`}>{arrow} {label}</span>;
+}
+
+// ── Metric row ────────────────────────────────────────────────────────────
+
+function MetricRow({ label, value, change, inverse, isPoints, sub }) {
   return (
-    <div className="dash-card">
-      <div className="dash-card-title">{title}</div>
-      {loading ? (
-        <div className="dash-loading"><span /><span /><span /></div>
-      ) : !items || items.length === 0 ? (
-        <div className="dash-empty">{emptyMsg || 'No data'}</div>
-      ) : (
-        <ul className="dash-list">
-          {items.map((item, i) => <li key={i}>{renderItem(item)}</li>)}
-        </ul>
-      )}
+    <div className="metric-row">
+      <span className="metric-label">{label}</span>
+      <div className="metric-right">
+        <span className="metric-value">{value}</span>
+        <Trend change={change} inverse={inverse} isPoints={isPoints} />
+      </div>
+      {sub && <div className="metric-sub">{sub}</div>}
     </div>
   );
 }
 
+// ── Section ───────────────────────────────────────────────────────────────
+
+function Section({ title, icon, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="dash-section">
+      <button className="dash-section-header" onClick={() => setOpen(o => !o)}>
+        <span>{icon} {title}</span>
+        <span className="dash-chevron">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && <div className="dash-section-body">{children}</div>}
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────
+
 function Dashboard({ isConnected }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
     if (!isConnected) return;
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard`);
+      const url = force ? `${API_BASE}/api/dashboard?refresh=1` : `${API_BASE}/api/dashboard`;
+      const res = await fetch(url);
       const json = await res.json();
       setData(json);
     } catch (e) {
-      console.error('Dashboard fetch failed', e);
+      setError('Failed to load dashboard');
     } finally {
       setLoading(false);
     }
@@ -54,117 +103,128 @@ function Dashboard({ isConnected }) {
 
   useEffect(() => {
     fetchData();
-    // Refresh every 12 hours
-    const interval = setInterval(fetchData, 12 * 60 * 60 * 1000);
+    const interval = setInterval(() => fetchData(), 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
-  const extractContacts = (raw) => {
-    try {
-      const results = raw?.content?.[0]?.text ? JSON.parse(raw.content[0].text) : raw;
-      return results?.results || results?.contacts || (Array.isArray(results) ? results : []);
-    } catch { return []; }
-  };
-
-  const extractDeals = (raw) => {
-    try {
-      const results = raw?.content?.[0]?.text ? JSON.parse(raw.content[0].text) : raw;
-      return results?.results || results?.deals || (Array.isArray(results) ? results : []);
-    } catch { return []; }
-  };
-
-  const extractCompanies = (raw) => {
-    try {
-      const results = raw?.content?.[0]?.text ? JSON.parse(raw.content[0].text) : raw;
-      return results?.results || results?.companies || (Array.isArray(results) ? results : []);
-    } catch { return []; }
-  };
 
   if (!isConnected) {
     return (
       <aside className="dashboard-panel">
-        <div className="dash-header">Dashboard</div>
-        <div className="dash-not-connected">Connect HubSpot to see your CRM data here.</div>
+        <div className="dash-topbar"><span>Dashboard</span></div>
+        <div className="dash-not-connected">Connect HubSpot to see your CRM metrics here.</div>
       </aside>
     );
   }
 
-  const contacts = extractContacts(data?.contacts);
-  const deals = extractDeals(data?.deals);
-  const companies = extractCompanies(data?.companies);
+  const d = data;
+  const deals = d?.deals;
+  const activity = d?.activity;
+  const contacts = d?.contacts;
+
+  // Stage breakdown — top 5
+  const stages = deals?.byStage
+    ? Object.entries(deals.byStage).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    : [];
+
+  // Source breakdown — top 4
+  const sources = contacts?.sources
+    ? Object.entries(contacts.sources).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    : [];
 
   return (
     <aside className="dashboard-panel">
-      <div className="dash-header">
-        <span>Dashboard</span>
-        <button className="dash-refresh" onClick={fetchData} title="Refresh" disabled={loading}>↻</button>
+      <div className="dash-topbar">
+        <span>Dashboard <span className="dash-period">· last 30d vs prior</span></span>
+        <button className="dash-refresh-btn" onClick={() => fetchData(true)} disabled={loading} title="Refresh">
+          <span className={loading ? 'spinning' : ''}>↻</span>
+        </button>
       </div>
 
-      <DashboardCard
-        title="Recent Contacts"
-        items={contacts}
-        loading={loading && !data}
-        emptyMsg="No contacts found"
-        renderItem={c => {
-          const p = c.properties || c;
-          const name = [p.firstname, p.lastname].filter(Boolean).join(' ') || 'Unknown';
-          return (
-            <div className="dash-item">
-              <div className="dash-avatar">{name[0]?.toUpperCase()}</div>
-              <div>
-                <div className="dash-item-name">{name}</div>
-                <div className="dash-item-sub">{p.email || '—'}</div>
-              </div>
-            </div>
-          );
-        }}
-      />
+      {error && <div className="dash-error">{error}</div>}
 
-      <DashboardCard
-        title="Recent Deals"
-        items={deals}
-        loading={loading && !data}
-        emptyMsg="No deals found"
-        renderItem={d => {
-          const p = d.properties || d;
-          const amount = p.amount ? `$${Number(p.amount).toLocaleString()}` : '—';
-          return (
-            <div className="dash-item">
-              <div className="dash-avatar deal">$</div>
-              <div>
-                <div className="dash-item-name">{p.dealname || 'Unnamed deal'}</div>
-                <div className="dash-item-sub">{amount} · {p.dealstage || '—'}</div>
-              </div>
-            </div>
-          );
-        }}
-      />
+      {!d && loading && (
+        <div className="dash-skeleton">
+          {[...Array(12)].map((_, i) => <div key={i} className="skel-row" />)}
+        </div>
+      )}
 
-      <DashboardCard
-        title="Companies"
-        items={companies}
-        loading={loading && !data}
-        emptyMsg="No companies found"
-        renderItem={c => {
-          const p = c.properties || c;
-          return (
-            <div className="dash-item">
-              <div className="dash-avatar company">🏢</div>
-              <div>
-                <div className="dash-item-name">{p.name || 'Unknown'}</div>
-                <div className="dash-item-sub">{p.domain || p.industry || '—'}</div>
-              </div>
-            </div>
-          );
-        }}
-      />
+      {d && (
+        <>
+          {/* Sales */}
+          <Section title="Sales" icon="💼" defaultOpen={true}>
+            <MetricRow label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
+            <MetricRow label="Pipeline Added" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
+            <MetricRow label="Closed Won" value={`${fmtNum(deals?.won?.count?.current)} · ${fmtCur(deals?.won?.value?.current)}`} change={deals?.won?.count?.change} />
+            <MetricRow label="Closed Lost" value={fmtNum(deals?.lost?.current)} change={deals?.lost?.change} inverse />
+            <MetricRow label="Win Rate" value={fmtPct(deals?.winRate?.current)} change={deals?.winRate?.change} isPoints />
+            <MetricRow label="Avg Deal Size" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
+            {deals?.overdueCount > 0 && (
+              <MetricRow label="Past Close Date" value={fmtNum(deals?.overdueCount)} change={null} inverse />
+            )}
+          </Section>
 
-      {data?.fetchedAt && (
-        <div className="dash-footer">Updated {timeAgo(data.fetchedAt)} · refreshes every 12h</div>
+          {/* Pipeline snapshot */}
+          {stages.length > 0 && (
+            <Section title="Pipeline by Stage" icon="📊" defaultOpen={false}>
+              {stages.map(([stage, count]) => (
+                <div key={stage} className="metric-row">
+                  <span className="metric-label">{stage.replace(/_/g, ' ')}</span>
+                  <span className="metric-value">{count}</span>
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* Contacts */}
+          <Section title="Contacts" icon="👥" defaultOpen={true}>
+            <MetricRow label="New Contacts" value={fmtNum(contacts?.current)} change={contacts?.change} />
+            {activity?.overdueTasks > 0 && (
+              <MetricRow label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+            )}
+            {sources.length > 0 && (
+              <div className="metric-breakdown">
+                <div className="metric-breakdown-title">Source breakdown</div>
+                {sources.map(([src, count]) => (
+                  <div key={src} className="breakdown-row">
+                    <span>{src}</span>
+                    <span>{count}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Activity */}
+          <Section title="Activity" icon="📞" defaultOpen={true}>
+            {activity?.calls && (
+              <MetricRow label="Calls" value={fmtNum(activity.calls.current)} change={activity.calls.change} />
+            )}
+            {activity?.meetings && (
+              <MetricRow label="Meetings" value={fmtNum(activity.meetings.current)} change={activity.meetings.change} />
+            )}
+            <MetricRow label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
+            {activity?.overdueTasks > 0 && (
+              <MetricRow label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+            )}
+          </Section>
+
+          {/* Marketing / Campaigns */}
+          {d.campaigns && (
+            <Section title="Campaigns" icon="📧" defaultOpen={false}>
+              <div className="metric-row"><span className="metric-label metric-dim">Campaign data loaded</span></div>
+            </Section>
+          )}
+        </>
+      )}
+
+      {d && (
+        <div className="dash-footer">Updated {timeAgo(d.fetchedAt)} · auto-refreshes every 30m</div>
       )}
     </aside>
   );
 }
+
+// ── App ───────────────────────────────────────────────────────────────────
 
 function App() {
   const [messages, setMessages] = useState(() => {
@@ -239,28 +299,28 @@ function App() {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I couldn\'t connect to the server.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I couldn't connect to the server." }]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const startVoice = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { alert('Speech recognition is not supported in this browser.'); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Speech recognition is not supported in this browser.'); return; }
     if (isRecording) return;
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.onstart = () => setIsRecording(true);
-    recognition.onend = () => setIsRecording(false);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-      handleSend(transcript);
+    const r = new SR();
+    r.lang = 'en-US';
+    r.onstart = () => setIsRecording(true);
+    r.onend = () => setIsRecording(false);
+    r.onerror = () => setIsRecording(false);
+    r.onresult = (e) => {
+      const t = e.results[0][0].transcript;
+      setInput(t);
+      handleSend(t);
     };
-    recognition.onerror = () => setIsRecording(false);
-    recognition.start();
+    r.start();
   };
 
   return (
