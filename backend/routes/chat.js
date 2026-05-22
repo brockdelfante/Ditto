@@ -135,18 +135,48 @@ router.post('/execute', async (req, res) => {
     try {
         const hubspot = new HubSpotMCPClient(req.session);
 
-        // Use stored tool calls if available (preferred — no hallucination risk)
         let toolsToCall = executionId ? pendingActions.get(executionId) : null;
         if (executionId) pendingActions.delete(executionId);
 
         if (!toolsToCall) {
-            return res.status(400).json({ error: 'No pending action found. Please try your request again.' });
+            // Model described an action in text without generating a tool_call.
+            // Re-invoke with forceTools=true to generate the actual tool_call from history.
+            const tools = await getTools(req.session, hubspot);
+            const messages = [
+                ...history.map(m => ({ role: m.role, content: m.content })),
+                { role: 'user', content: message || 'Yes, go ahead.' }
+            ];
+            const response = await getChatCompletion(messages, tools, true);
+            if (!response.tool_calls?.length) {
+                return res.status(400).json({ error: "I couldn't work out what action to take. Could you describe it again?" });
+            }
+            toolsToCall = response.tool_calls;
         }
 
         const toolResults = [];
         for (const toolCall of toolsToCall) {
             console.log('Executing tool:', toolCall.function.name, toolCall.function.arguments);
-            const result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
+            let result;
+            try {
+                result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
+            } catch (err) {
+                // Auto-retry: pass the error back to the LLM so it can fix the arguments
+                const tools = await getTools(req.session, hubspot);
+                const retryMessages = [
+                    ...history.map(m => ({ role: m.role, content: m.content })),
+                    { role: 'user', content: message || 'Yes, go ahead.' },
+                    { role: 'assistant', content: null, tool_calls: [toolCall] },
+                    { role: 'tool', tool_call_id: toolCall.id || 'call_0', content: `Error: ${err.message}` }
+                ];
+                const fixResponse = await getChatCompletion(retryMessages, tools, true);
+                if (fixResponse.tool_calls?.length) {
+                    const fixed = fixResponse.tool_calls[0];
+                    console.log('Retrying with fixed args:', fixed.function.arguments);
+                    result = await hubspot.callTool(fixed.function.name, JSON.parse(fixed.function.arguments));
+                } else {
+                    throw err;
+                }
+            }
             toolResults.push({ tool: toolCall.function.name, result });
         }
 
