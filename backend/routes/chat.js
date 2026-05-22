@@ -74,8 +74,7 @@ router.post('/chat', async (req, res) => {
             { role: 'user', content: message }
         ];
 
-        // Force tool use so the model cannot hallucinate a response without calling a tool
-        const response = await getChatCompletion(messages, tools, tools.length > 0);
+        const response = await getChatCompletion(messages, tools);
 
         console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0);
 
