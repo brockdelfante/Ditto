@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = 'google/gemini-3.1-flash-lite';
+const MODEL = 'anthropic/claude-haiku-4-5-20251001';
 
 const CHAT_SYSTEM_PROMPT = `You are a friendly and professional HubSpot assistant.
 
@@ -42,9 +42,9 @@ async function callOpenRouter(systemPrompt, messages, tools = [], forceTools = f
     return response.data.choices[0].message;
 }
 
-async function getChatCompletion(messages, tools = []) {
+async function getChatCompletion(messages, tools = [], forceTools = false) {
     try {
-        return await callOpenRouter(CHAT_SYSTEM_PROMPT, messages, tools);
+        return await callOpenRouter(CHAT_SYSTEM_PROMPT, messages, tools, forceTools);
     } catch (error) {
         console.error('Error calling OpenRouter:', error.response?.data || error.message);
         throw error;
