@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = 'anthropic/claude-3-5-haiku-20241022';
+const MODEL = 'deepseek/deepseek-v4-flash';
 
 const CHAT_SYSTEM_PROMPT = `You are a friendly and professional HubSpot assistant.
 
