@@ -41,6 +41,13 @@ async function exchangeToken(code, codeVerifier, session, res) {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
+        console.log('Token response received:', {
+            access_token_length: response.data.access_token?.length || 0,
+            token_type: response.data.token_type,
+            expires_in: response.data.expires_in,
+            has_refresh_token: !!response.data.refresh_token
+        });
+
         const tokens = {
             ...response.data,
             expiry: Date.now() + (response.data.expires_in * 1000)
@@ -60,7 +67,7 @@ async function exchangeToken(code, codeVerifier, session, res) {
         console.log('Token exchange successful.');
         return true;
     } catch (error) {
-        console.error('Error exchanging code for tokens:', error.response?.data || error.message);
+        console.error('Error exchanging code for tokens:', error.response?.status, error.response?.data || error.message);
         return false;
     }
 }
