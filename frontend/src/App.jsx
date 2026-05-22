@@ -22,7 +22,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [pendingExecutionId, setPendingExecutionId] = useState(null);
+  const [hasPendingAction, setHasPendingAction] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -60,17 +60,16 @@ function App() {
     setIsLoading(true);
 
     try {
-      // If there's a pending action, treat this message as the user's response to it
-      if (pendingExecutionId) {
+      // If there's a pending action waiting for confirmation, treat this as the user's response
+      if (hasPendingAction) {
         const lowerText = text.toLowerCase();
         const isRejection = REJECTION_KEYWORDS.some(kw => lowerText.includes(kw));
-        setPendingExecutionId(null);
+        setHasPendingAction(false);
 
         const res = await fetch(`${API_BASE}/api/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            executionId: pendingExecutionId,
             approved: !isRejection,
             message: text,
             history: messages
@@ -81,7 +80,7 @@ function App() {
         return;
       }
 
-      // Normal chat
+      // Normal chat — LLM responds conversationally, no tools called
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,8 +88,8 @@ function App() {
       });
       const data = await res.json();
 
-      if (data.executionId) {
-        setPendingExecutionId(data.executionId);
+      if (data.pendingAction) {
+        setHasPendingAction(true);
       }
 
       if (data.reply) {
@@ -130,7 +129,7 @@ function App() {
         <h1>HubSpot Assistant</h1>
         <div className="header-actions">
           {messages.length > 0 && (
-            <button onClick={() => { setMessages([]); setPendingExecutionId(null); }} className="btn-clear">Clear Chat</button>
+            <button onClick={() => { setMessages([]); setHasPendingAction(false); }} className="btn-clear">Clear Chat</button>
           )}
           <button
             onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
