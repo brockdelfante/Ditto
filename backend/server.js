@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
@@ -17,12 +18,18 @@ app.set('trust proxy', 1);
 
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 app.use(morgan('dev'));
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
-  saveUninitialized: true,
-  cookie: { secure: isProd }
+  saveUninitialized: false,
+  cookie: {
+    secure: isProd,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,
+    sameSite: 'lax'
+  }
 }));
 
 const chatLimiter = rateLimit({
@@ -43,6 +50,18 @@ app.get('/health', (req, res) => {
 const frontendDist = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendDist));
 
+// Restore tokens from cookie if session is empty
+app.use((req, res, next) => {
+  if (!req.session.tokens && req.cookies.hubspot_tokens) {
+    try {
+      req.session.tokens = JSON.parse(req.cookies.hubspot_tokens);
+    } catch (e) {
+      console.error('Failed to restore tokens from cookie:', e.message);
+    }
+  }
+  next();
+});
+
 // OAuth callback — handles both /auth/hubspot/callback and /
 async function handleOAuthCallback(req, res) {
   const { code } = req.query;
@@ -50,7 +69,7 @@ async function handleOAuthCallback(req, res) {
 
   if (code && codeVerifier) {
     console.log('Detected OAuth callback code...');
-    const success = await exchangeToken(code, codeVerifier, req.session);
+    const success = await exchangeToken(code, codeVerifier, req.session, res);
     if (success) {
       delete req.session.codeVerifier;
       return res.redirect('/');

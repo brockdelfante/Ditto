@@ -26,7 +26,7 @@ function generateCodeChallenge(verifier) {
     return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
-async function exchangeToken(code, codeVerifier, session) {
+async function exchangeToken(code, codeVerifier, session, res) {
     console.log('Exchanging code for tokens...');
     try {
         const meta = await getOAuthMeta();
@@ -41,10 +41,22 @@ async function exchangeToken(code, codeVerifier, session) {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
         });
 
-        session.tokens = {
+        const tokens = {
             ...response.data,
             expiry: Date.now() + (response.data.expires_in * 1000)
         };
+
+        session.tokens = tokens;
+
+        if (res) {
+            res.cookie('hubspot_tokens', JSON.stringify(tokens), {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: 7 * 24 * 60 * 60 * 1000,
+                sameSite: 'lax'
+            });
+        }
+
         console.log('Token exchange successful.');
         return true;
     } catch (error) {
