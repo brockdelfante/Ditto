@@ -43,18 +43,21 @@ class HubSpotMCPClient {
                     expiry: Date.now() + (response.data.expires_in * 1000)
                 };
                 this.session.tokens = tokens;
+                console.log('Token refreshed successfully');
             } catch (error) {
-                console.error('Failed to refresh token:', error.response?.data || error.message);
+                console.error('Failed to refresh token:', error.response?.status, error.response?.data || error.message);
                 throw new Error('HubSpot connection expired. Please reconnect.');
             }
         }
 
+        console.log('Using existing token, expires in', Math.round((tokens.expiry - Date.now()) / 1000), 'seconds');
         return tokens.access_token;
     }
 
     async callTool(name, parameters) {
         const accessToken = await this.getValidToken();
         try {
+            console.log(`Calling HubSpot MCP tool: ${name}, Token length: ${accessToken.length}`);
             const response = await axios.post(this.baseUrl, {
                 jsonrpc: '2.0',
                 method: 'tools/call',
@@ -76,7 +79,7 @@ class HubSpotMCPClient {
 
             return response.data.result;
         } catch (error) {
-            console.error(`Error calling HubSpot MCP tool ${name}:`, error.response?.data || error.message);
+            console.error(`Error calling HubSpot MCP tool ${name}:`, error.response?.status, error.response?.data || error.message);
             throw error;
         }
     }
