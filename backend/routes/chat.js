@@ -189,8 +189,12 @@ router.get('/dashboard', async (req, res) => {
         overdueTasks, currTasks, prevTasks,
         currCalls, prevCalls,
         currMeetings, prevMeetings,
+        currEmails, prevEmails,
+        currNotes, prevNotes,
         overdueDeals,
-        campaigns
+        currCampaigns, prevCampaigns,
+        currFormSubmissions, prevFormSubmissions,
+        currPageViews, prevPageViews
     ] = await Promise.all([
         safe('search_crm_objects', { objectType: 'contacts', limit: 100, filterGroups: [{ filters: dateFilters(currStart) }], properties: ['firstname', 'lastname', 'email', 'hs_lead_source'] }),
         safe('search_crm_objects', { objectType: 'contacts', limit: 1, filterGroups: [{ filters: dateFilters(prevStart, currStart) }], properties: ['createdate'] }),
@@ -207,8 +211,17 @@ router.get('/dashboard', async (req, res) => {
         safe('search_crm_objects', { objectType: 'calls', limit: 1, filterGroups: [{ filters: dateFilters(prevStart, currStart) }], properties: ['createdate'] }),
         safe('search_crm_objects', { objectType: 'meetings', limit: 1, filterGroups: [{ filters: dateFilters(currStart) }], properties: ['createdate'] }),
         safe('search_crm_objects', { objectType: 'meetings', limit: 1, filterGroups: [{ filters: dateFilters(prevStart, currStart) }], properties: ['createdate'] }),
+        safe('search_crm_objects', { objectType: 'emails', limit: 1, filterGroups: [{ filters: dateFilters(currStart) }], properties: ['createdate'] }),
+        safe('search_crm_objects', { objectType: 'emails', limit: 1, filterGroups: [{ filters: dateFilters(prevStart, currStart) }], properties: ['createdate'] }),
+        safe('search_crm_objects', { objectType: 'notes', limit: 1, filterGroups: [{ filters: dateFilters(currStart) }], properties: ['createdate'] }),
+        safe('search_crm_objects', { objectType: 'notes', limit: 1, filterGroups: [{ filters: dateFilters(prevStart, currStart) }], properties: ['createdate'] }),
         safe('search_crm_objects', { objectType: 'deals', limit: 1, filterGroups: [{ filters: [{ propertyName: 'closedate', operator: 'LT', value: String(now) }, { propertyName: 'dealstage', operator: 'NEQ', value: 'closedwon' }, { propertyName: 'dealstage', operator: 'NEQ', value: 'closedlost' }] }], properties: ['createdate'] }),
-        safe('get_campaign_analytics', { limit: 10 })
+        safe('get_campaign_analytics', { startDate: new Date(currStart).toISOString().split('T')[0], endDate: new Date(now).toISOString().split('T')[0] }),
+        safe('get_campaign_analytics', { startDate: new Date(prevStart).toISOString().split('T')[0], endDate: new Date(currStart).toISOString().split('T')[0] }),
+        safe('get_campaign_asset_metrics', { assetType: 'FORM', startDate: new Date(currStart).toISOString().split('T')[0], endDate: new Date(now).toISOString().split('T')[0] }),
+        safe('get_campaign_asset_metrics', { assetType: 'FORM', startDate: new Date(prevStart).toISOString().split('T')[0], endDate: new Date(currStart).toISOString().split('T')[0] }),
+        safe('get_campaign_asset_metrics', { assetType: 'SITE_PAGE', startDate: new Date(currStart).toISOString().split('T')[0], endDate: new Date(now).toISOString().split('T')[0] }),
+        safe('get_campaign_asset_metrics', { assetType: 'SITE_PAGE', startDate: new Date(prevStart).toISOString().split('T')[0], endDate: new Date(currStart).toISOString().split('T')[0] })
     ]);
 
     const currContactsTotal = getTotal(currContacts);
@@ -246,6 +259,28 @@ router.get('/dashboard', async (req, res) => {
         sourceMap[src] = (sourceMap[src] || 0) + 1;
     });
 
+    // Campaign analytics — email opens
+    const parseCampaignOpens = (raw) => {
+        const r = parseResult(raw);
+        if (!r) return 0;
+        const items = Array.isArray(r) ? r : (Array.isArray(r?.results) ? r.results : []);
+        return items.reduce((s, c) => s + (c.opens || c.emailOpens || 0), 0);
+    };
+    const currEmailOpens = parseCampaignOpens(currCampaigns);
+    const prevEmailOpens = parseCampaignOpens(prevCampaigns);
+
+    // Campaign asset metrics — form submissions & page views
+    const parseAssetMetric = (raw, key) => {
+        const r = parseResult(raw);
+        if (!r) return 0;
+        const items = Array.isArray(r) ? r : (Array.isArray(r?.results) ? r.results : []);
+        return items.reduce((s, a) => s + (a[key] || 0), 0);
+    };
+    const currForms = parseAssetMetric(currFormSubmissions, 'submissions');
+    const prevForms = parseAssetMetric(prevFormSubmissions, 'submissions');
+    const currViews = parseAssetMetric(currPageViews, 'views');
+    const prevViews = parseAssetMetric(prevPageViews, 'views');
+
     const data = {
         fetchedAt: now,
         contacts: { current: currContactsTotal, prior: prevContactsTotal, change: pct(currContactsTotal, prevContactsTotal), sources: sourceMap },
@@ -262,10 +297,16 @@ router.get('/dashboard', async (req, res) => {
         activity: {
             tasks: { current: getTotal(currTasks), prior: getTotal(prevTasks), change: pct(getTotal(currTasks), getTotal(prevTasks)) },
             overdueTasks: getTotal(overdueTasks),
-            calls: currCalls !== null ? { current: getTotal(currCalls), prior: getTotal(prevCalls), change: pct(getTotal(currCalls), getTotal(prevCalls)) } : null,
-            meetings: currMeetings !== null ? { current: getTotal(currMeetings), prior: getTotal(prevMeetings), change: pct(getTotal(currMeetings), getTotal(prevMeetings)) } : null
+            calls: { current: getTotal(currCalls), prior: getTotal(prevCalls), change: pct(getTotal(currCalls), getTotal(prevCalls)) },
+            meetings: { current: getTotal(currMeetings), prior: getTotal(prevMeetings), change: pct(getTotal(currMeetings), getTotal(prevMeetings)) },
+            emails: { current: getTotal(currEmails), prior: getTotal(prevEmails), change: pct(getTotal(currEmails), getTotal(prevEmails)) },
+            notes: { current: getTotal(currNotes), prior: getTotal(prevNotes), change: pct(getTotal(currNotes), getTotal(prevNotes)) }
         },
-        campaigns: campaigns ? parseResult(campaigns) : null
+        marketing: {
+            emailOpens: { current: currEmailOpens, prior: prevEmailOpens, change: pct(currEmailOpens, prevEmailOpens) },
+            formSubmissions: { current: currForms, prior: prevForms, change: pct(currForms, prevForms) },
+            pageViews: { current: currViews, prior: prevViews, change: pct(currViews, prevViews) }
+        }
     };
 
     req.session.dashboardCache = { data, fetchedAt: now };

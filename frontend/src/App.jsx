@@ -37,32 +37,6 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 60)}h ago`;
 }
 
-// ── Trend badge ───────────────────────────────────────────────────────────
-
-function Trend({ change, inverse = false, isPoints = false }) {
-  if (change === null || change === undefined) return null;
-  const good = inverse ? change < 0 : change > 0;
-  const cls = good ? 'trend-up' : change === 0 ? 'trend-flat' : 'trend-down';
-  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '—';
-  const label = change === 0 ? '0%' : `${Math.abs(change)}${isPoints ? 'pp' : '%'}`;
-  return <span className={`trend ${cls}`}>{arrow} {label}</span>;
-}
-
-// ── Metric row ────────────────────────────────────────────────────────────
-
-function MetricRow({ label, value, change, inverse, isPoints, sub }) {
-  return (
-    <div className="metric-row">
-      <span className="metric-label">{label}</span>
-      <div className="metric-right">
-        <span className="metric-value">{value}</span>
-        <Trend change={change} inverse={inverse} isPoints={isPoints} />
-      </div>
-      {sub && <div className="metric-sub">{sub}</div>}
-    </div>
-  );
-}
-
 // ── Section ───────────────────────────────────────────────────────────────
 
 function Section({ title, icon, children, defaultOpen = true }) {
@@ -74,6 +48,24 @@ function Section({ title, icon, children, defaultOpen = true }) {
         <span className="dash-chevron">{open ? '▾' : '▸'}</span>
       </button>
       {open && <div className="dash-section-body">{children}</div>}
+    </div>
+  );
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────
+
+function KpiCard({ label, value, change, inverse = false, isPoints = false }) {
+  const good = inverse ? change < 0 : change > 0;
+  const cls = change === null || change === undefined ? '' : good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
+  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : null;
+  const badge = change !== null && change !== undefined
+    ? `${arrow ? arrow + ' ' : ''}${Math.abs(change)}${isPoints ? 'pp' : '%'}`
+    : null;
+  return (
+    <div className="kpi-card">
+      <div className="kpi-label">{label}</div>
+      <div className="kpi-value">{value}</div>
+      {badge && <div className={`kpi-badge ${cls}`}>{badge}</div>}
     </div>
   );
 }
@@ -120,13 +112,12 @@ function Dashboard({ isConnected }) {
   const deals = d?.deals;
   const activity = d?.activity;
   const contacts = d?.contacts;
+  const marketing = d?.marketing;
 
-  // Stage breakdown — top 5
   const stages = deals?.byStage
-    ? Object.entries(deals.byStage).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    ? Object.entries(deals.byStage).sort((a, b) => b[1] - a[1]).slice(0, 6)
     : [];
 
-  // Source breakdown — top 4
   const sources = contacts?.sources
     ? Object.entries(contacts.sources).sort((a, b) => b[1] - a[1]).slice(0, 4)
     : [];
@@ -144,7 +135,7 @@ function Dashboard({ isConnected }) {
 
       {!d && loading && (
         <div className="dash-skeleton">
-          {[...Array(12)].map((_, i) => <div key={i} className="skel-row" />)}
+          {[...Array(16)].map((_, i) => <div key={i} className="skel-row" />)}
         </div>
       )}
 
@@ -152,38 +143,41 @@ function Dashboard({ isConnected }) {
         <>
           {/* Sales */}
           <Section title="Sales" icon="💼" defaultOpen={true}>
-            <MetricRow label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
-            <MetricRow label="Pipeline Added" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
-            <MetricRow label="Closed Won" value={`${fmtNum(deals?.won?.count?.current)} · ${fmtCur(deals?.won?.value?.current)}`} change={deals?.won?.count?.change} />
-            <MetricRow label="Closed Lost" value={fmtNum(deals?.lost?.current)} change={deals?.lost?.change} inverse />
-            <MetricRow label="Win Rate" value={fmtPct(deals?.winRate?.current)} change={deals?.winRate?.change} isPoints />
-            <MetricRow label="Avg Deal Size" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
-            {deals?.overdueCount > 0 && (
-              <MetricRow label="Past Close Date" value={fmtNum(deals?.overdueCount)} change={null} inverse />
+            <div className="kpi-grid">
+              <KpiCard label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
+              <KpiCard label="Pipeline" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
+              <KpiCard label="Won" value={fmtNum(deals?.won?.count?.current)} change={deals?.won?.count?.change} />
+              <KpiCard label="Lost" value={fmtNum(deals?.lost?.current)} change={deals?.lost?.change} inverse />
+              <KpiCard label="Win Rate" value={fmtPct(deals?.winRate?.current)} change={deals?.winRate?.change} isPoints />
+              <KpiCard label="Avg Deal" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
+              {deals?.overdueCount > 0 && (
+                <KpiCard label="Overdue" value={fmtNum(deals?.overdueCount)} change={null} inverse />
+              )}
+            </div>
+            {stages.length > 0 && (
+              <div className="stage-breakdown">
+                <div className="breakdown-title">Pipeline by stage</div>
+                {stages.map(([stage, count]) => (
+                  <div key={stage} className="breakdown-row">
+                    <span>{stage.replace(/_/g, ' ')}</span>
+                    <span>{count}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </Section>
 
-          {/* Pipeline snapshot */}
-          {stages.length > 0 && (
-            <Section title="Pipeline by Stage" icon="📊" defaultOpen={false}>
-              {stages.map(([stage, count]) => (
-                <div key={stage} className="metric-row">
-                  <span className="metric-label">{stage.replace(/_/g, ' ')}</span>
-                  <span className="metric-value">{count}</span>
-                </div>
-              ))}
-            </Section>
-          )}
-
           {/* Contacts */}
           <Section title="Contacts" icon="👥" defaultOpen={true}>
-            <MetricRow label="New Contacts" value={fmtNum(contacts?.current)} change={contacts?.change} />
-            {activity?.overdueTasks > 0 && (
-              <MetricRow label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
-            )}
+            <div className="kpi-grid">
+              <KpiCard label="New Contacts" value={fmtNum(contacts?.current)} change={contacts?.change} />
+              {activity?.overdueTasks > 0 && (
+                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+              )}
+            </div>
             {sources.length > 0 && (
-              <div className="metric-breakdown">
-                <div className="metric-breakdown-title">Source breakdown</div>
+              <div className="stage-breakdown">
+                <div className="breakdown-title">By source</div>
                 {sources.map(([src, count]) => (
                   <div key={src} className="breakdown-row">
                     <span>{src}</span>
@@ -196,24 +190,26 @@ function Dashboard({ isConnected }) {
 
           {/* Activity */}
           <Section title="Activity" icon="📞" defaultOpen={true}>
-            {activity?.calls && (
-              <MetricRow label="Calls" value={fmtNum(activity.calls.current)} change={activity.calls.change} />
-            )}
-            {activity?.meetings && (
-              <MetricRow label="Meetings" value={fmtNum(activity.meetings.current)} change={activity.meetings.change} />
-            )}
-            <MetricRow label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
-            {activity?.overdueTasks > 0 && (
-              <MetricRow label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
-            )}
+            <div className="kpi-grid">
+              <KpiCard label="Calls" value={fmtNum(activity?.calls?.current)} change={activity?.calls?.change} />
+              <KpiCard label="Meetings" value={fmtNum(activity?.meetings?.current)} change={activity?.meetings?.change} />
+              <KpiCard label="Emails" value={fmtNum(activity?.emails?.current)} change={activity?.emails?.change} />
+              <KpiCard label="Notes" value={fmtNum(activity?.notes?.current)} change={activity?.notes?.change} />
+              <KpiCard label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
+              {activity?.overdueTasks > 0 && (
+                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+              )}
+            </div>
           </Section>
 
-          {/* Marketing / Campaigns */}
-          {d.campaigns && (
-            <Section title="Campaigns" icon="📧" defaultOpen={false}>
-              <div className="metric-row"><span className="metric-label metric-dim">Campaign data loaded</span></div>
-            </Section>
-          )}
+          {/* Marketing */}
+          <Section title="Marketing" icon="📧" defaultOpen={true}>
+            <div className="kpi-grid">
+              <KpiCard label="Email Opens" value={fmtNum(marketing?.emailOpens?.current)} change={marketing?.emailOpens?.change} />
+              <KpiCard label="Form Submits" value={fmtNum(marketing?.formSubmissions?.current)} change={marketing?.formSubmissions?.change} />
+              <KpiCard label="Page Views" value={fmtNum(marketing?.pageViews?.current)} change={marketing?.pageViews?.change} />
+            </div>
+          </Section>
         </>
       )}
 
