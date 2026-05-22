@@ -7,6 +7,8 @@ const API_BASE = import.meta.env.DEV
 
 const STORAGE_KEY = 'ditto_chat_history';
 
+const REJECTION_KEYWORDS = ['no', 'cancel', 'stop', "don't", 'nope', 'nevermind', 'never mind', 'abort', 'skip', 'forget it'];
+
 function App() {
   const [messages, setMessages] = useState(() => {
     try {
@@ -20,6 +22,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingExecutionId, setPendingExecutionId] = useState(null);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -57,6 +60,28 @@ function App() {
     setIsLoading(true);
 
     try {
+      // If there's a pending action, treat this message as the user's response to it
+      if (pendingExecutionId) {
+        const lowerText = text.toLowerCase();
+        const isRejection = REJECTION_KEYWORDS.some(kw => lowerText.includes(kw));
+        setPendingExecutionId(null);
+
+        const res = await fetch(`${API_BASE}/api/execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            executionId: pendingExecutionId,
+            approved: !isRejection,
+            message: text,
+            history: messages
+          })
+        });
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
+        return;
+      }
+
+      // Normal chat
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -64,8 +89,12 @@ function App() {
       });
       const data = await res.json();
 
+      if (data.executionId) {
+        setPendingExecutionId(data.executionId);
+      }
+
       if (data.reply) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply, proposal: data.proposal, executionId: data.executionId }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
       } else if (data.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
       }
@@ -73,21 +102,6 @@ function App() {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error: Could not connect to backend.' }]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleExecute = async (executionId, approved) => {
-    setMessages(prev => [...prev, { role: 'assistant', content: approved ? 'Executing actions...' : 'Cancelling...' }]);
-    try {
-      const res = await fetch(`${API_BASE}/api/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ executionId, approved })
-      });
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Error executing action.' }]);
     }
   };
 
@@ -110,32 +124,13 @@ function App() {
     recognition.start();
   };
 
-  const formatProposal = (toolCalls) => {
-    return toolCalls.map((tc, idx) => {
-      const args = JSON.parse(tc.function.arguments);
-      let summary = tc.function.name.replace('hubspot_', '').replace('_', ' ');
-      summary = summary.charAt(0).toUpperCase() + summary.slice(1);
-
-      const details = Object.entries(args)
-        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-        .join(', ');
-
-      return (
-        <div key={idx} className="tool-proposal">
-          <strong>{summary}</strong>
-          <p>{details}</p>
-        </div>
-      );
-    });
-  };
-
   return (
     <div className="app-container">
       <header>
         <h1>HubSpot Assistant</h1>
         <div className="header-actions">
           {messages.length > 0 && (
-            <button onClick={() => setMessages([])} className="btn-clear">Clear Chat</button>
+            <button onClick={() => { setMessages([]); setPendingExecutionId(null); }} className="btn-clear">Clear Chat</button>
           )}
           <button
             onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
@@ -155,20 +150,7 @@ function App() {
         )}
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
-            <div className="bubble">
-              <div className="text-content">{m.content}</div>
-              {m.proposal && (
-                <div className="proposal-ui">
-                  <div className="proposal-list">
-                    {formatProposal(m.proposal)}
-                  </div>
-                  <div className="actions">
-                    <button onClick={() => handleExecute(m.executionId, true)}>Approve</button>
-                    <button onClick={() => handleExecute(m.executionId, false)} className="btn-cancel">Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <div className="bubble">{m.content}</div>
           </div>
         ))}
         {isLoading && (
