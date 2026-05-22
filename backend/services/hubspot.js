@@ -3,14 +3,7 @@ const axios = require('axios');
 const CLIENT_ID = process.env.HUBSPOT_CLIENT_ID;
 const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET;
 const MCP_SERVER_URL = 'https://mcp.hubspot.com';
-
-let oauthMeta = null;
-async function getOAuthMeta() {
-    if (oauthMeta) return oauthMeta;
-    const res = await axios.get(`${MCP_SERVER_URL}/.well-known/oauth-authorization-server`);
-    oauthMeta = res.data;
-    return oauthMeta;
-}
+const TOKEN_ENDPOINT = 'https://api.hubapi.com/oauth/v3/token';
 
 class HubSpotMCPClient {
     constructor(session) {
@@ -28,8 +21,7 @@ class HubSpotMCPClient {
         if (tokens.expiry && now > (tokens.expiry - buffer)) {
             console.log('Refreshing HubSpot token...');
             try {
-                const meta = await getOAuthMeta();
-                const response = await axios.post(meta.token_endpoint, new URLSearchParams({
+                const response = await axios.post(TOKEN_ENDPOINT, new URLSearchParams({
                     grant_type: 'refresh_token',
                     client_id: CLIENT_ID,
                     client_secret: CLIENT_SECRET,

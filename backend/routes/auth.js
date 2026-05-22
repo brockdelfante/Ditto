@@ -6,17 +6,10 @@ const router = express.Router();
 const CLIENT_ID = process.env.HUBSPOT_CLIENT_ID;
 const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
+
+const AUTHORIZATION_ENDPOINT = 'https://app.hubspot.com/oauth/authorize';
+const TOKEN_ENDPOINT = 'https://api.hubapi.com/oauth/v3/token';
 const MCP_SERVER_URL = 'https://mcp.hubspot.com';
-
-let oauthMeta = null;
-
-async function getOAuthMeta() {
-    if (oauthMeta) return oauthMeta;
-    const res = await axios.get(`${MCP_SERVER_URL}/.well-known/oauth-authorization-server`);
-    oauthMeta = res.data;
-    console.log('Discovered OAuth metadata:', JSON.stringify(oauthMeta));
-    return oauthMeta;
-}
 
 function generateCodeVerifier() {
     return crypto.randomBytes(32).toString('base64url');
@@ -29,8 +22,7 @@ function generateCodeChallenge(verifier) {
 async function exchangeToken(code, codeVerifier, session, res) {
     console.log('Exchanging code for tokens...');
     try {
-        const meta = await getOAuthMeta();
-        const response = await axios.post(meta.token_endpoint, new URLSearchParams({
+        const response = await axios.post(TOKEN_ENDPOINT, new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: CLIENT_ID,
             client_secret: CLIENT_SECRET,
@@ -72,26 +64,20 @@ async function exchangeToken(code, codeVerifier, session, res) {
     }
 }
 
-router.get('/hubspot', async (req, res) => {
-    try {
-        const meta = await getOAuthMeta();
-        const codeVerifier = generateCodeVerifier();
-        const codeChallenge = generateCodeChallenge(codeVerifier);
-        req.session.codeVerifier = codeVerifier;
+router.get('/hubspot', (req, res) => {
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
+    req.session.codeVerifier = codeVerifier;
 
-        const authUrl = `${meta.authorization_endpoint}` +
-            `?client_id=${encodeURIComponent(CLIENT_ID)}` +
-            `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-            `&response_type=code` +
-            `&code_challenge=${encodeURIComponent(codeChallenge)}` +
-            `&code_challenge_method=S256`;
+    const authUrl = `${AUTHORIZATION_ENDPOINT}` +
+        `?client_id=${encodeURIComponent(CLIENT_ID)}` +
+        `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+        `&response_type=code` +
+        `&code_challenge=${encodeURIComponent(codeChallenge)}` +
+        `&code_challenge_method=S256`;
 
-        console.log('Redirecting to discovered HubSpot Auth URL...');
-        res.redirect(authUrl);
-    } catch (error) {
-        console.error('Failed to discover OAuth metadata:', error.message);
-        res.status(500).send('Failed to connect to HubSpot MCP server.');
-    }
+    console.log('Redirecting to HubSpot Auth URL...');
+    res.redirect(authUrl);
 });
 
 router.get('/status', (req, res) => {
