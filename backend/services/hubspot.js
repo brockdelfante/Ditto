@@ -2,27 +2,34 @@ const axios = require('axios');
 
 const CLIENT_ID = process.env.HUBSPOT_CLIENT_ID;
 const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET;
+const MCP_SERVER_URL = 'https://mcp.hubspot.com';
+
+let oauthMeta = null;
+async function getOAuthMeta() {
+    if (oauthMeta) return oauthMeta;
+    const res = await axios.get(`${MCP_SERVER_URL}/.well-known/oauth-authorization-server`);
+    oauthMeta = res.data;
+    return oauthMeta;
+}
 
 class HubSpotMCPClient {
     constructor(session) {
         this.session = session;
-        this.baseUrl = 'https://mcp.hubspot.com';
+        this.baseUrl = MCP_SERVER_URL;
     }
 
     async getValidToken() {
         let tokens = this.session.tokens;
         if (!tokens) throw new Error('No tokens found in session');
 
-        // HubSpot tokens usually last 30 minutes. Let's refresh if they are close to expiring.
-        // We calculate expiration based on when we received them.
-        // In this prototype, we'll just check if we have a refresh token.
         const now = Date.now();
-        const buffer = 5 * 60 * 1000; // 5 minutes
+        const buffer = 5 * 60 * 1000;
 
         if (tokens.expiry && now > (tokens.expiry - buffer)) {
             console.log('Refreshing HubSpot token...');
             try {
-                const response = await axios.post('https://api.hubapi.com/oauth/v1/token', new URLSearchParams({
+                const meta = await getOAuthMeta();
+                const response = await axios.post(meta.token_endpoint, new URLSearchParams({
                     grant_type: 'refresh_token',
                     client_id: CLIENT_ID,
                     client_secret: CLIENT_SECRET,
@@ -90,11 +97,9 @@ class HubSpotMCPClient {
             });
 
             const result = response.data.result;
-            console.log('HubSpot listTools raw response:', JSON.stringify(response.data));
             if (!result) {
                 throw new Error(`HubSpot MCP returned no result. Full response: ${JSON.stringify(response.data)}`);
             }
-            // Handle both {tools: [...]} and plain array formats
             return Array.isArray(result) ? result : result.tools;
         } catch (error) {
             console.error('Error listing HubSpot MCP tools:', error.response?.data || error.message);
