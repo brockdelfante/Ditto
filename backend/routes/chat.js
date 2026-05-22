@@ -74,9 +74,8 @@ router.post('/chat', async (req, res) => {
             { role: 'user', content: message }
         ];
 
-        // Pass tools so the LLM can generate tool_calls for write ops
-        // and execute reads immediately
-        const response = await getChatCompletion(messages, tools);
+        // Force tool use so the model cannot hallucinate a response without calling a tool
+        const response = await getChatCompletion(messages, tools, tools.length > 0);
 
         console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0);
 
