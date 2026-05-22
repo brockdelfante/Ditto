@@ -50,7 +50,7 @@ class HubSpotMCPClient {
         try {
             const response = await axios.post(this.baseUrl, {
                 jsonrpc: '2.0',
-                method: 'call_tool',
+                method: 'tools/call',
                 params: {
                     name,
                     arguments: parameters
@@ -79,7 +79,7 @@ class HubSpotMCPClient {
         try {
             const response = await axios.post(this.baseUrl, {
                 jsonrpc: '2.0',
-                method: 'list_tools',
+                method: 'tools/list',
                 params: {},
                 id: Date.now()
             }, {
