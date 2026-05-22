@@ -238,6 +238,7 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasPendingAction, setHasPendingAction] = useState(false);
+  const [pendingExecutionId, setPendingExecutionId] = useState(null);
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -272,12 +273,14 @@ function App() {
     try {
       if (hasPendingAction) {
         const isRejection = REJECTION_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+        const execId = pendingExecutionId;
         setHasPendingAction(false);
+        setPendingExecutionId(null);
 
         const res = await fetch(`${API_BASE}/api/execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approved: !isRejection, message: text, history: messages })
+          body: JSON.stringify({ approved: !isRejection, message: text, history: messages, executionId: execId })
         });
         const data = await res.json();
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
@@ -291,7 +294,10 @@ function App() {
       });
       const data = await res.json();
 
-      if (data.pendingAction) setHasPendingAction(true);
+      if (data.pendingAction) {
+        setHasPendingAction(true);
+        setPendingExecutionId(data.executionId || null);
+      }
 
       if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
@@ -332,7 +338,7 @@ function App() {
         </div>
         <div className="header-actions">
           {messages.length > 0 && (
-            <button onClick={() => { setMessages([]); setHasPendingAction(false); }} className="btn-ghost">
+            <button onClick={() => { setMessages([]); setHasPendingAction(false); setPendingExecutionId(null); }} className="btn-ghost">
               Clear chat
             </button>
           )}
