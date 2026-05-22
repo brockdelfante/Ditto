@@ -3,9 +3,6 @@ const router = express.Router();
 const { getChatCompletion, generateSummary } = require('../services/llm');
 const HubSpotMCPClient = require('../services/hubspot');
 
-// In-memory store for pending actions
-const pendingActions = new Map();
-
 router.post('/chat', async (req, res) => {
     const { message, history = [] } = req.body;
     const tokens = req.session.tokens;
@@ -18,8 +15,39 @@ router.post('/chat', async (req, res) => {
     }
 
     try {
+        const messages = [
+            ...history.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: message }
+        ];
+
+        // No tools passed — LLM just converses and asks for confirmation before acting
+        const response = await getChatCompletion(messages, []);
+
+        // Detect if LLM is proposing an action and waiting for user confirmation
+        const proposalPhrases = ['shall i', 'want me to', 'should i', 'would you like me to', 'go ahead', 'proceed', 'shall we', 'like me to', 'ready to'];
+        const pendingAction = proposalPhrases.some(p => response.content?.toLowerCase().includes(p));
+
+        res.json({ reply: response.content, pendingAction });
+    } catch (error) {
+        console.error('Chat error:', error.message);
+        res.status(500).json({ error: 'Failed to process chat: ' + error.message });
+    }
+});
+
+router.post('/execute', async (req, res) => {
+    const { approved, message, history = [] } = req.body;
+    const tokens = req.session.tokens;
+
+    if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (!approved) {
+        return res.json({ reply: "No problem, I won't make those changes. Is there anything else I can help you with?" });
+    }
+
+    try {
         const hubspot = new HubSpotMCPClient(req.session);
 
+        // Fetch tools (cached per session)
         const TOOLS_TTL = 10 * 60 * 1000;
         const cache = req.session.toolsCache;
         let tools;
@@ -30,50 +58,21 @@ router.post('/chat', async (req, res) => {
             req.session.toolsCache = { tools, fetchedAt: Date.now() };
         }
 
+        // Call LLM with full conversation history + tools so it generates the right tool calls
         const messages = [
             ...history.map(m => ({ role: m.role, content: m.content })),
-            { role: 'user', content: message }
+            { role: 'user', content: message || 'Yes, please go ahead.' }
         ];
+
         const response = await getChatCompletion(messages, tools);
 
-        if (response.tool_calls) {
-            const executionId = Math.random().toString(36).substring(7);
-            pendingActions.set(executionId, response.tool_calls);
-
-            return res.json({
-                reply: response.content || 'I have some HubSpot actions to propose:',
-                proposal: response.tool_calls,
-                executionId
-            });
+        if (!response.tool_calls || response.tool_calls.length === 0) {
+            return res.json({ reply: response.content || 'Done!' });
         }
 
-        res.json({ reply: response.content });
-    } catch (error) {
-        console.error('Chat error:', error.message);
-        res.status(500).json({ error: 'Failed to process chat: ' + error.message });
-    }
-});
-
-router.post('/execute', async (req, res) => {
-    const { executionId, approved, message, history = [] } = req.body;
-    const tokens = req.session.tokens;
-
-    if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
-
-    const toolsToCall = pendingActions.get(executionId);
-    if (!toolsToCall) return res.status(404).json({ error: 'Proposal not found or expired.' });
-
-    pendingActions.delete(executionId);
-
-    if (!approved) {
-        return res.json({ reply: "No problem, I won't make those changes. Is there anything else I can help you with?" });
-    }
-
-    try {
-        const hubspot = new HubSpotMCPClient(req.session);
+        // Execute the tool calls
         const toolResults = [];
-
-        for (const toolCall of toolsToCall) {
+        for (const toolCall of response.tool_calls) {
             const result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
             toolResults.push({ tool: toolCall.function.name, result });
         }
