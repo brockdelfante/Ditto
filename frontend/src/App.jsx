@@ -5,17 +5,34 @@ const API_BASE = import.meta.env.DEV
   ? (import.meta.env.VITE_API_BASE || 'http://localhost:3001')
   : window.location.origin;
 
+const STORAGE_KEY = 'ditto_chat_history';
+
 function App() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [input, setInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
     checkStatus();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch {
+      // storage quota exceeded — silently ignore
+    }
+  }, [messages]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,11 +49,12 @@ function App() {
   };
 
   const handleSend = async (text = input) => {
-    if (!text.trim()) return;
+    if (!text.trim() || isLoading) return;
 
     const userMsg = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setIsLoading(true);
 
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
@@ -53,6 +71,8 @@ function App() {
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Error: Could not connect to backend.' }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -114,7 +134,10 @@ function App() {
       <header>
         <h1>HubSpot Assistant</h1>
         <div className="header-actions">
-           <button
+          {messages.length > 0 && (
+            <button onClick={() => setMessages([])} className="btn-clear">Clear Chat</button>
+          )}
+          <button
             onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
             className={isConnected ? 'btn-connected' : 'btn-connect'}
           >
@@ -148,6 +171,13 @@ function App() {
             </div>
           </div>
         ))}
+        {isLoading && (
+          <div className="message assistant">
+            <div className="bubble typing-indicator">
+              <span /><span /><span />
+            </div>
+          </div>
+        )}
         <div ref={chatEndRef} />
       </div>
 
@@ -164,9 +194,11 @@ function App() {
           onChange={e => setInput(e.target.value)}
           onKeyPress={e => e.key === 'Enter' && handleSend()}
           placeholder="Type a message..."
-          disabled={isRecording}
+          disabled={isRecording || isLoading}
         />
-        <button onClick={() => handleSend()} disabled={!input.trim() || isRecording}>Send</button>
+        <button onClick={() => handleSend()} disabled={!input.trim() || isRecording || isLoading}>
+          {isLoading ? 'Thinking...' : 'Send'}
+        </button>
       </div>
     </div>
   );

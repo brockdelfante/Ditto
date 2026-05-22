@@ -3,9 +3,9 @@ const crypto = require('crypto');
 const axios = require('axios');
 const router = express.Router();
 
-const CLIENT_ID = process.env.HUBSPOT_CLIENT_ID || '87bf2c90-3a02-4eee-9297-6d2343b35318';
-const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET || '0b42dea9-f41b-47d1-91c0-69e5739dc4c5';
-const REDIRECT_URI = process.env.REDIRECT_URI || 'https://ditto-0lzz.onrender.com/';
+const CLIENT_ID = process.env.HUBSPOT_CLIENT_ID;
+const CLIENT_SECRET = process.env.HUBSPOT_CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI;
 
 function generateCodeVerifier() {
     return crypto.randomBytes(32).toString('base64url');

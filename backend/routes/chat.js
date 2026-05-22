@@ -19,7 +19,16 @@ router.post('/chat', async (req, res) => {
 
     try {
         const hubspot = new HubSpotMCPClient(req.session);
-        const tools = await hubspot.listTools();
+
+        const TOOLS_TTL = 10 * 60 * 1000;
+        const cache = req.session.toolsCache;
+        let tools;
+        if (cache && (Date.now() - cache.fetchedAt) < TOOLS_TTL) {
+            tools = cache.tools;
+        } else {
+            tools = await hubspot.listTools();
+            req.session.toolsCache = { tools, fetchedAt: Date.now() };
+        }
 
         const messages = [
             ...history.map(m => ({ role: m.role, content: m.content })),
