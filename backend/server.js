@@ -5,7 +5,7 @@ const session = require('express-session');
 const path = require('path');
 require('dotenv').config();
 
-const authRoutes = require('./routes/auth');
+const { router: authRoutes, exchangeToken } = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 
 const app = express();
@@ -32,7 +32,25 @@ app.get('/health', (req, res) => {
 const frontendDist = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendDist));
 
-// In Express 5, the simplest catch-all that seems to avoid path-to-regexp issues is using a regex
+// Root route handles both SPA and OAuth callback
+app.get('/', async (req, res, next) => {
+  const { code } = req.query;
+  const codeVerifier = req.session.codeVerifier;
+
+  if (code && codeVerifier) {
+    console.log('Detected OAuth callback code at root...');
+    const success = await exchangeToken(code, codeVerifier, req.session);
+    if (success) {
+      // Clean up session and redirect to clear query params
+      delete req.session.codeVerifier;
+      return res.redirect('/');
+    }
+  }
+
+  res.sendFile(path.join(frontendDist, 'index.html'));
+});
+
+// Catch-all for other SPA routes
 app.get(/^(?!\/(api|auth|health)).*$/, (req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
