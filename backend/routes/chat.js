@@ -85,4 +85,57 @@ router.post('/execute', async (req, res) => {
     }
 });
 
+const DASHBOARD_TTL = 12 * 60 * 60 * 1000; // 12 hours
+
+router.get('/dashboard', async (req, res) => {
+    if (!req.session.tokens) return res.json({ connected: false });
+
+    const cache = req.session.dashboardCache;
+    if (cache && (Date.now() - cache.fetchedAt) < DASHBOARD_TTL) {
+        return res.json(cache.data);
+    }
+
+    const hubspot = new HubSpotMCPClient(req.session);
+    const data = { fetchedAt: Date.now() };
+
+    try {
+        data.contacts = await hubspot.callTool('search_crm_objects', {
+            objectType: 'contacts',
+            limit: 5,
+            sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+            properties: ['firstname', 'lastname', 'email', 'createdate']
+        });
+    } catch (e) {
+        console.error('Dashboard contacts error:', e.message);
+        data.contacts = null;
+    }
+
+    try {
+        data.deals = await hubspot.callTool('search_crm_objects', {
+            objectType: 'deals',
+            limit: 5,
+            sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+            properties: ['dealname', 'amount', 'dealstage', 'closedate']
+        });
+    } catch (e) {
+        console.error('Dashboard deals error:', e.message);
+        data.deals = null;
+    }
+
+    try {
+        data.companies = await hubspot.callTool('search_crm_objects', {
+            objectType: 'companies',
+            limit: 5,
+            sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+            properties: ['name', 'domain', 'industry']
+        });
+    } catch (e) {
+        console.error('Dashboard companies error:', e.message);
+        data.companies = null;
+    }
+
+    req.session.dashboardCache = { data, fetchedAt: Date.now() };
+    res.json(data);
+});
+
 module.exports = router;
