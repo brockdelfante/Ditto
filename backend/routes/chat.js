@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getChatCompletion } = require('../services/llm');
+const { getChatCompletion, generateSummary } = require('../services/llm');
 const HubSpotMCPClient = require('../services/hubspot');
 
 // In-memory store for pending actions
@@ -55,33 +55,31 @@ router.post('/chat', async (req, res) => {
 });
 
 router.post('/execute', async (req, res) => {
-    const { executionId, approved } = req.body;
+    const { executionId, approved, message, history = [] } = req.body;
     const tokens = req.session.tokens;
 
     if (!tokens) return res.status(401).json({ error: 'Unauthorized' });
 
     const toolsToCall = pendingActions.get(executionId);
-    if (!toolsToCall) return res.status(404).json({ error: 'Proposal not found' });
+    if (!toolsToCall) return res.status(404).json({ error: 'Proposal not found or expired.' });
 
     pendingActions.delete(executionId);
 
     if (!approved) {
-        return res.json({ reply: 'Action cancelled.' });
+        return res.json({ reply: "No problem, I won't make those changes. Is there anything else I can help you with?" });
     }
 
     try {
         const hubspot = new HubSpotMCPClient(req.session);
-        const results = [];
+        const toolResults = [];
 
         for (const toolCall of toolsToCall) {
             const result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
-            results.push({ tool: toolCall.function.name, result });
+            toolResults.push({ tool: toolCall.function.name, result });
         }
 
-        res.json({
-            reply: 'Successfully executed HubSpot actions.',
-            results
-        });
+        const reply = await generateSummary(history, message, toolResults);
+        res.json({ reply });
     } catch (error) {
         console.error('Execution error:', error.message);
         res.status(500).json({ error: 'Failed to execute actions: ' + error.message });

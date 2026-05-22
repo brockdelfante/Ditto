@@ -80,44 +80,6 @@ header h1 {
   border-bottom-right-radius: 2px;
 }
 
-.proposal-ui {
-  margin-top: 1rem;
-  padding: 1rem;
-  background: #eaf0f6;
-  border-radius: 8px;
-  border-left: 4px solid var(--hubspot-orange);
-}
-
-.proposal-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  margin-bottom: 1rem;
-}
-
-.tool-proposal {
-  font-size: 0.9rem;
-}
-
-.tool-proposal strong {
-  display: block;
-  color: var(--hubspot-dark);
-  margin-bottom: 0.2rem;
-}
-
-.tool-proposal p {
-  margin: 0;
-  color: #516f90;
-  font-family: monospace;
-  background: rgba(255,255,255,0.5);
-  padding: 0.3rem;
-  border-radius: 4px;
-}
-
-.actions {
-  display: flex;
-  gap: 0.8rem;
-}
 
 .input-area {
   padding: 1.5rem 2rem;
@@ -199,20 +161,6 @@ button:disabled {
   color: var(--white);
 }
 
-.btn-cancel {
-  background: #f5f8fa;
-  color: var(--hubspot-dark);
-  border: 1px solid #cbd6e2;
-}
-
-.actions button {
-  flex: 1;
-}
-
-.actions button:first-child {
-  background: #00a38d;
-  color: var(--white);
-}
 
 .btn-clear {
   background: transparent;
