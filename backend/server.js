@@ -41,23 +41,25 @@ app.get('/health', (req, res) => {
 const frontendDist = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendDist));
 
-// Root route handles both SPA and OAuth callback
-app.get('/', async (req, res, next) => {
+// OAuth callback — handles both /auth/hubspot/callback and /
+async function handleOAuthCallback(req, res) {
   const { code } = req.query;
   const codeVerifier = req.session.codeVerifier;
 
   if (code && codeVerifier) {
-    console.log('Detected OAuth callback code at root...');
+    console.log('Detected OAuth callback code...');
     const success = await exchangeToken(code, codeVerifier, req.session);
     if (success) {
-      // Clean up session and redirect to clear query params
       delete req.session.codeVerifier;
       return res.redirect('/');
     }
   }
 
   res.sendFile(path.join(frontendDist, 'index.html'));
-});
+}
+
+app.get('/auth/hubspot/callback', handleOAuthCallback);
+app.get('/', handleOAuthCallback);
 
 // Catch-all for other SPA routes
 app.get(/^(?!\/(api|auth|health)).*$/, (req, res) => {
