@@ -89,7 +89,13 @@ class HubSpotMCPClient {
                 }
             });
 
-            return response.data.result.tools;
+            const result = response.data.result;
+            console.log('HubSpot listTools raw response:', JSON.stringify(response.data));
+            if (!result) {
+                throw new Error(`HubSpot MCP returned no result. Full response: ${JSON.stringify(response.data)}`);
+            }
+            // Handle both {tools: [...]} and plain array formats
+            return Array.isArray(result) ? result : result.tools;
         } catch (error) {
             console.error('Error listing HubSpot MCP tools:', error.response?.data || error.message);
             throw error;
