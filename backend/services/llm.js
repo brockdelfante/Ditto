@@ -5,7 +5,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 async function getChatCompletion(messages, tools = []) {
     try {
         const payload = {
-            model: 'anthropic/claude-3-sonnet',
+            model: 'google/gemini-3.1-flash-lite',
             messages: [
                 {
                     role: 'system',
