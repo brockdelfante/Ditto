@@ -243,14 +243,18 @@ function Dashboard({ isConnected, activeTab }) {
 
           {/* Activity */}
           <Section title="Activity" icon="📞" defaultOpen={true}>
-            <div className="kpi-grid">
+            <div className="kpi-grid kpi-grid--row">
               <KpiCard label="Calls" value={fmtNum(activity?.calls?.current)} change={activity?.calls?.change} />
               <KpiCard label="Meetings" value={fmtNum(activity?.meetings?.current)} change={activity?.meetings?.change} />
+              <KpiCard label="Emails" value={fmtNum(activity?.emails?.current)} change={activity?.emails?.change} />
+              <KpiCard label="Notes" value={fmtNum(activity?.notes?.current)} change={activity?.notes?.change} />
               <KpiCard label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
-              {activity?.overdueTasks > 0 && (
-                <KpiCard label="Overdue" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
-              )}
             </div>
+            {activity?.overdueTasks > 0 && (
+              <div className="kpi-grid" style={{paddingTop: 0}}>
+                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+              </div>
+            )}
           </Section>
 
           {/* Marketing */}

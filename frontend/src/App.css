@@ -445,6 +445,10 @@ body {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
+.kpi-grid--row {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 .kpi-card {
   background: #f8fafc;
   border: 1px solid var(--border);
