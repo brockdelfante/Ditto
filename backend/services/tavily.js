@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const TAVILY_API_KEY = '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';
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 const TAVILY_MCP_URL = `https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}`;
 
 async function callTool(name, parameters) {

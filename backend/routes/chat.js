@@ -12,13 +12,25 @@ const pendingActions = new Map();
 const SYNTHETIC_TOOLS = [
     {
         name: 'validate_email',
-        description: 'Validate an email address. Returns status (valid, invalid, disposable, etc.), reason, and domain. Call this before adding a contact and when a contact\'s ZB_STATUS property is missing.',
+        description: "Validate an email address before adding or updating a HubSpot contact. Returns status (valid/invalid/disposable/unknown), reason, and domain. Always call before creating a contact. Call on lookup/update if contact's ZB_STATUS is missing.",
         inputSchema: {
             type: 'object',
             properties: {
                 email: { type: 'string', description: 'Email address to validate' }
             },
             required: ['email']
+        }
+    },
+    {
+        name: 'write_to_info_panel',
+        description: 'Send content to the Agent Information Panel. Call after completing any action (Pathways 1-3) with type "summary" and plain text. Call after Pathway 4 research with type "research" and structured HTML.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                content: { type: 'string', description: 'HTML or plain text content to display' },
+                type: { type: 'string', enum: ['summary', 'research'], description: '"summary" for action summaries, "research" for Pathway 4 HTML' }
+            },
+            required: ['content', 'type']
         }
     }
 ];
@@ -45,6 +57,9 @@ async function getTavilyTools() {
 async function executeTool(name, args, hubspot) {
     if (name === 'validate_email') {
         return await emailValidator.validateEmail(args.email);
+    }
+    if (name === 'write_to_info_panel') {
+        return { content: args.content, type: args.type || 'summary' };
     }
     const tavilyTools = await getTavilyTools();
     if (tavilyTools.some(t => t.name === name)) {
@@ -121,50 +136,80 @@ router.post('/chat', async (req, res) => {
         const hubspot = new HubSpotMCPClient(req.session);
         const tools = await getTools(req.session, hubspot);
 
-        const messages = [
+        const writeOps = ['manage_crm_objects', 'create', 'update', 'delete', 'upsert'];
+        const MAX_LOOPS = 8;
+        let loopMessages = [
             ...history.map(m => ({ role: m.role, content: m.content })),
             { role: 'user', content: message }
         ];
+        let panelUpdates = [];
+        let loopCount = 0;
 
-        const response = await getChatCompletion(messages, tools);
+        while (loopCount < MAX_LOOPS) {
+            const response = await getChatCompletion(loopMessages, tools);
+            console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0, 'loop:', loopCount);
+            loopCount++;
 
-        console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0);
-
-        // If LLM wants to do a write action, store it and ask the user to confirm
-        if (response.tool_calls?.length > 0) {
-            // Check if it's a read or write operation
-            const writeOps = ['manage_crm_objects', 'create', 'update', 'delete', 'upsert'];
-            const isWrite = response.tool_calls.some(tc =>
-                writeOps.some(op => tc.function.name.toLowerCase().includes(op))
-            );
-
-            if (isWrite) {
-                // Store pending write — don't execute yet
-                const executionId = Math.random().toString(36).substring(7);
-                pendingActions.set(executionId, response.tool_calls);
-
+            if (!response.tool_calls?.length) {
+                const proposalPhrases = ['shall i', 'want me to', 'should i', 'would you like me to', 'go ahead', 'proceed', 'shall we', 'like me to'];
+                const pendingAction = proposalPhrases.some(p => response.content?.toLowerCase().includes(p));
                 return res.json({
-                    reply: response.content || "I've prepared the action. Shall I go ahead?",
-                    pendingAction: true,
-                    executionId
+                    reply: response.content,
+                    pendingAction,
+                    panelUpdates: panelUpdates.length ? panelUpdates : undefined
                 });
             }
 
-            // Read operation — execute immediately and return results
-            const toolResults = [];
-            for (const toolCall of response.tool_calls) {
-                const result = await executeTool(toolCall.function.name, JSON.parse(toolCall.function.arguments), hubspot);
-                toolResults.push({ tool: toolCall.function.name, result });
+            // Separate HubSpot writes from immediate tools
+            const hubspotWrites = response.tool_calls.filter(tc =>
+                writeOps.some(op => tc.function.name.toLowerCase().includes(op))
+            );
+            const immediateTools = response.tool_calls.filter(tc =>
+                !writeOps.some(op => tc.function.name.toLowerCase().includes(op))
+            );
+
+            // Add assistant message with tool_calls to loop context
+            loopMessages.push({
+                role: 'assistant',
+                content: response.content || null,
+                tool_calls: response.tool_calls
+            });
+
+            // Execute all immediate tools (reads, validate_email, write_to_info_panel, Tavily)
+            for (const toolCall of immediateTools) {
+                let result;
+                try {
+                    result = await executeTool(toolCall.function.name, JSON.parse(toolCall.function.arguments), hubspot);
+                    if (toolCall.function.name === 'write_to_info_panel') {
+                        panelUpdates.push({ content: result.content, type: result.type || 'summary', timestamp: Date.now() });
+                    }
+                } catch (err) {
+                    console.error(`Tool ${toolCall.function.name} error:`, err.message);
+                    result = { error: err.message };
+                }
+                loopMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id || `call_${Date.now()}`,
+                    content: JSON.stringify(result)
+                });
             }
-            const summary = await generateSummary(history, message, toolResults);
-            return res.json({ reply: summary });
+
+            if (hubspotWrites.length > 0) {
+                const executionId = Math.random().toString(36).substring(7);
+                pendingActions.set(executionId, { toolCalls: hubspotWrites, panelUpdates });
+                return res.json({
+                    reply: response.content || "I've prepared the action. Shall I go ahead?",
+                    pendingAction: true,
+                    executionId,
+                    panelUpdates: panelUpdates.length ? panelUpdates : undefined
+                });
+            }
         }
 
-        // Pure conversation
-        const proposalPhrases = ['shall i', 'want me to', 'should i', 'would you like me to', 'go ahead', 'proceed', 'shall we', 'like me to'];
-        const pendingAction = proposalPhrases.some(p => response.content?.toLowerCase().includes(p));
-
-        res.json({ reply: response.content, pendingAction });
+        return res.json({
+            reply: "I'm having trouble completing that request. Please try again.",
+            panelUpdates: panelUpdates.length ? panelUpdates : undefined
+        });
     } catch (error) {
         console.error('Chat error:', error.message);
         res.status(500).json({ error: 'Failed to process chat: ' + error.message });
