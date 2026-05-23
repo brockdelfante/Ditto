@@ -2,9 +2,56 @@ const express = require('express');
 const router = express.Router();
 const { getChatCompletion, generateSummary } = require('../services/llm');
 const HubSpotMCPClient = require('../services/hubspot');
+const emailValidator = require('../services/emailValidator');
+const tavily = require('../services/tavily');
 
 // Pending tool calls awaiting user confirmation
 const pendingActions = new Map();
+
+// Synthetic tools not backed by any MCP server
+const SYNTHETIC_TOOLS = [
+    {
+        name: 'validate_email',
+        description: 'Validate an email address. Returns status (valid, invalid, disposable, etc.), reason, and domain. Call this before adding a contact and when a contact\'s ZB_STATUS property is missing.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                email: { type: 'string', description: 'Email address to validate' }
+            },
+            required: ['email']
+        }
+    }
+];
+
+// Tavily tools cache (global — not per-session)
+let tavilyToolsCache = null;
+let tavilyToolsFetchedAt = 0;
+
+async function getTavilyTools() {
+    const TTL = 10 * 60 * 1000;
+    if (tavilyToolsCache && (Date.now() - tavilyToolsFetchedAt) < TTL) return tavilyToolsCache;
+    try {
+        const tools = await tavily.listTools();
+        tavilyToolsCache = tools || [];
+        tavilyToolsFetchedAt = Date.now();
+    } catch (err) {
+        console.error('Failed to load Tavily tools:', err.message);
+        tavilyToolsCache = tavilyToolsCache || [];
+    }
+    return tavilyToolsCache;
+}
+
+// Route a tool call to the correct service
+async function executeTool(name, args, hubspot) {
+    if (name === 'validate_email') {
+        return await emailValidator.validateEmail(args.email);
+    }
+    const tavilyTools = await getTavilyTools();
+    if (tavilyTools.some(t => t.name === name)) {
+        return await tavily.callTool(name, args);
+    }
+    return await hubspot.callTool(name, args);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -49,10 +96,15 @@ function dateFilters(from, to) {
 async function getTools(session, hubspot) {
     const TOOLS_TTL = 10 * 60 * 1000;
     const cache = session.toolsCache;
-    if (cache && (Date.now() - cache.fetchedAt) < TOOLS_TTL) return cache.tools;
-    const tools = await hubspot.listTools();
-    session.toolsCache = { tools, fetchedAt: Date.now() };
-    return tools;
+    let hubspotTools;
+    if (cache && (Date.now() - cache.fetchedAt) < TOOLS_TTL) {
+        hubspotTools = cache.tools;
+    } else {
+        hubspotTools = await hubspot.listTools();
+        session.toolsCache = { tools: hubspotTools, fetchedAt: Date.now() };
+    }
+    const tavilyTools = await getTavilyTools();
+    return [...hubspotTools, ...tavilyTools, ...SYNTHETIC_TOOLS];
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────
@@ -101,7 +153,7 @@ router.post('/chat', async (req, res) => {
             // Read operation — execute immediately and return results
             const toolResults = [];
             for (const toolCall of response.tool_calls) {
-                const result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
+                const result = await executeTool(toolCall.function.name, JSON.parse(toolCall.function.arguments), hubspot);
                 toolResults.push({ tool: toolCall.function.name, result });
             }
             const summary = await generateSummary(history, message, toolResults);
@@ -158,7 +210,7 @@ router.post('/execute', async (req, res) => {
             console.log('Executing tool:', toolCall.function.name, toolCall.function.arguments);
             let result;
             try {
-                result = await hubspot.callTool(toolCall.function.name, JSON.parse(toolCall.function.arguments));
+                result = await executeTool(toolCall.function.name, JSON.parse(toolCall.function.arguments), hubspot);
             } catch (err) {
                 // Auto-retry: pass the error back to the LLM so it can fix the arguments
                 const tools = await getTools(req.session, hubspot);
@@ -172,7 +224,7 @@ router.post('/execute', async (req, res) => {
                 if (fixResponse.tool_calls?.length) {
                     const fixed = fixResponse.tool_calls[0];
                     console.log('Retrying with fixed args:', fixed.function.arguments);
-                    result = await hubspot.callTool(fixed.function.name, JSON.parse(fixed.function.arguments));
+                    result = await executeTool(fixed.function.name, JSON.parse(fixed.function.arguments), hubspot);
                 } else {
                     throw err;
                 }

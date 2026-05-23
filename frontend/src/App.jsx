@@ -8,6 +8,12 @@ const API_BASE = import.meta.env.DEV
 const STORAGE_KEY = 'ditto_chat_history';
 const REJECTION_KEYWORDS = ['no', 'cancel', 'stop', "don't", 'nope', 'nevermind', 'never mind', 'abort', 'skip', 'forget it'];
 
+const QUICK_ACTIONS = [
+    { label: 'Manage contact or deal', message: 'I want to manage an existing contact or deal.' },
+    { label: 'Add new contact', message: 'I want to add a new contact.' },
+    { label: 'Log sales activity', message: 'I want to log sales activity.' },
+];
+
 // ── Formatters ────────────────────────────────────────────────────────────
 
 function fmtNum(n) {
@@ -371,6 +377,19 @@ function App() {
               </div>
             )}
             <div ref={chatEndRef} />
+          </div>
+
+          <div className="quick-actions-bar">
+              {QUICK_ACTIONS.map(action => (
+                  <button
+                      key={action.label}
+                      className="quick-action-btn"
+                      onClick={() => handleSend(action.message)}
+                      disabled={isLoading || isRecording}
+                  >
+                      {action.label}
+                  </button>
+              ))}
           </div>
 
           <div className="input-area">

@@ -546,3 +546,38 @@ body {
 @media (max-width: 820px) {
   .dashboard-panel { display: none; }
 }
+
+/* ── Quick Action Buttons ── */
+
+.quick-actions-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem 0;
+  background: var(--white);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.quick-action-btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: 20px;
+  border: 1.5px solid var(--orange);
+  background: transparent;
+  color: var(--orange);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.quick-action-btn:hover:not(:disabled) {
+  background: var(--orange);
+  color: white;
+}
+
+.quick-action-btn:disabled {
+  border-color: var(--border);
+  color: var(--subtext);
+  cursor: not-allowed;
+}
