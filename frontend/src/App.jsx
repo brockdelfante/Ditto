@@ -9,9 +9,10 @@ const STORAGE_KEY = 'ditto_chat_history';
 const REJECTION_KEYWORDS = ['no', 'cancel', 'stop', "don't", 'nope', 'nevermind', 'never mind', 'abort', 'skip', 'forget it'];
 
 const QUICK_ACTIONS = [
-    { label: 'Manage contact or deal', message: 'I want to manage an existing contact or deal.' },
+    { label: 'Manage contact or deal', message: 'I want to manage an existing contact, company or deal.' },
     { label: 'Add new contact', message: 'I want to add a new contact.' },
     { label: 'Log sales activity', message: 'I want to log sales activity.' },
+    { label: 'Bring me up to speed', message: 'Bring me up to speed on a contact.' },
 ];
 
 // ── Formatters ────────────────────────────────────────────────────────────
@@ -76,9 +77,42 @@ function KpiCard({ label, value, change, inverse = false, isPoints = false }) {
   );
 }
 
+// ── Info Panel ────────────────────────────────────────────────────────────
+
+function InfoPanel({ items, activeTab }) {
+  return (
+    <aside className={`info-panel${activeTab === 'info' ? ' tab-active' : ''}`}>
+      <div className="info-panel-header">
+        <span>Agent Activity</span>
+      </div>
+      <div className="info-panel-body">
+        {!items.length ? (
+          <div className="info-panel-empty">Agent activity and research will appear here.</div>
+        ) : (
+          items.map((item, i) => (
+            <div key={i} className={`info-panel-item info-panel-item--${item.type}`}>
+              {i > 0 && <div className="info-panel-divider" />}
+              {item.type === 'research' ? (
+                <div className="info-panel-research" dangerouslySetInnerHTML={{ __html: item.content }} />
+              ) : (
+                <div className="info-panel-summary">
+                  <p className="info-panel-summary-text">{item.content}</p>
+                  <span className="info-panel-timestamp">
+                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────
 
-function Dashboard({ isConnected }) {
+function Dashboard({ isConnected, activeTab }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -107,7 +141,7 @@ function Dashboard({ isConnected }) {
 
   if (!isConnected) {
     return (
-      <aside className="dashboard-panel">
+      <aside className={`dashboard-panel${activeTab === 'dashboard' ? ' tab-active' : ''}`}>
         <div className="dash-topbar"><span>Dashboard</span></div>
         <div className="dash-not-connected">Connect HubSpot to see your CRM metrics here.</div>
       </aside>
@@ -129,7 +163,7 @@ function Dashboard({ isConnected }) {
     : [];
 
   return (
-    <aside className="dashboard-panel">
+    <aside className={`dashboard-panel${activeTab === 'dashboard' ? ' tab-active' : ''}`}>
       <div className="dash-topbar">
         <span>Dashboard <span className="dash-period">· last 30d vs prior</span></span>
         <button className="dash-refresh-btn" onClick={() => fetchData(true)} disabled={loading} title="Refresh">
@@ -243,6 +277,8 @@ function App() {
   const [pendingExecutionId, setPendingExecutionId] = useState(null);
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
+  const [panelItems, setPanelItems] = useState([]);
+  const [activeTab, setActiveTab] = useState('chat');
 
   useEffect(() => { checkStatus(); }, []);
 
@@ -285,6 +321,9 @@ function App() {
           body: JSON.stringify({ approved: !isRejection, message: text, history: messages, executionId: execId })
         });
         const data = await res.json();
+        if (data.panelUpdates?.length) {
+          setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
+        }
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
         return;
       }
@@ -295,6 +334,9 @@ function App() {
         body: JSON.stringify({ message: text, history: messages })
       });
       const data = await res.json();
+      if (data.panelUpdates?.length) {
+        setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
+      }
 
       if (data.pendingAction) {
         setHasPendingAction(true);
@@ -355,7 +397,9 @@ function App() {
       </header>
 
       <div className="app-body">
-        <section className="chat-section">
+        <InfoPanel items={panelItems} activeTab={activeTab} />
+
+        <section className={`chat-section${activeTab === 'chat' ? ' tab-active' : ''}`}>
           <div className="chat-window">
             {messages.length === 0 && (
               <div className="welcome">
@@ -380,16 +424,16 @@ function App() {
           </div>
 
           <div className="quick-actions-bar">
-              {QUICK_ACTIONS.map(action => (
-                  <button
-                      key={action.label}
-                      className="quick-action-btn"
-                      onClick={() => handleSend(action.message)}
-                      disabled={isLoading || isRecording}
-                  >
-                      {action.label}
-                  </button>
-              ))}
+            {QUICK_ACTIONS.map(action => (
+              <button
+                key={action.label}
+                className="quick-action-btn"
+                onClick={() => handleSend(action.message)}
+                disabled={isLoading || isRecording}
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
 
           <div className="input-area">
@@ -422,8 +466,14 @@ function App() {
           </div>
         </section>
 
-        <Dashboard isConnected={isConnected} />
+        <Dashboard isConnected={isConnected} activeTab={activeTab} />
       </div>
+
+      <nav className="mobile-tab-bar">
+        <button className={activeTab === 'info' ? 'active' : ''} onClick={() => setActiveTab('info')}>Activity</button>
+        <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>Chat</button>
+        <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+      </nav>
     </div>
   );
 }

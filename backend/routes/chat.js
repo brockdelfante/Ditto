@@ -226,18 +226,21 @@ router.post('/execute', async (req, res) => {
 
     if (!approved) {
         if (executionId) pendingActions.delete(executionId);
-        return res.json({ reply: "No problem, I won't make those changes. Is there anything else I can help you with?" });
+        return res.json({ reply: "No problem. Is there anything else I can help with?" });
     }
 
     try {
         const hubspot = new HubSpotMCPClient(req.session);
 
-        let toolsToCall = executionId ? pendingActions.get(executionId) : null;
+        const pending = executionId ? pendingActions.get(executionId) : null;
         if (executionId) pendingActions.delete(executionId);
 
+        // Support both old format (array) and new format ({ toolCalls, panelUpdates })
+        let toolsToCall = Array.isArray(pending) ? pending : pending?.toolCalls;
+        let panelUpdates = Array.isArray(pending) ? [] : (pending?.panelUpdates || []);
+
         if (!toolsToCall) {
-            // Model described an action in text without generating a tool_call.
-            // Re-invoke with forceTools=true to generate the actual tool_call from history.
+            // Model described an action in text without a tool_call — re-invoke to generate one
             const tools = await getTools(req.session, hubspot);
             const messages = [
                 ...history.map(m => ({ role: m.role, content: m.content })),
@@ -256,8 +259,11 @@ router.post('/execute', async (req, res) => {
             let result;
             try {
                 result = await executeTool(toolCall.function.name, JSON.parse(toolCall.function.arguments), hubspot);
+                if (toolCall.function.name === 'write_to_info_panel') {
+                    panelUpdates.push({ content: result.content, type: result.type || 'summary', timestamp: Date.now() });
+                }
             } catch (err) {
-                // Auto-retry: pass the error back to the LLM so it can fix the arguments
+                // Auto-retry: pass error back to LLM to fix arguments
                 const tools = await getTools(req.session, hubspot);
                 const retryMessages = [
                     ...history.map(m => ({ role: m.role, content: m.content })),
@@ -270,6 +276,9 @@ router.post('/execute', async (req, res) => {
                     const fixed = fixResponse.tool_calls[0];
                     console.log('Retrying with fixed args:', fixed.function.arguments);
                     result = await executeTool(fixed.function.name, JSON.parse(fixed.function.arguments), hubspot);
+                    if (fixed.function.name === 'write_to_info_panel') {
+                        panelUpdates.push({ content: result.content, type: result.type || 'summary', timestamp: Date.now() });
+                    }
                 } else {
                     throw err;
                 }
@@ -278,7 +287,13 @@ router.post('/execute', async (req, res) => {
         }
 
         const reply = await generateSummary(history, message, toolResults);
-        res.json({ reply });
+
+        // Auto-generate a panel summary if model didn't call write_to_info_panel
+        if (!panelUpdates.length) {
+            panelUpdates = [{ content: reply, type: 'summary', timestamp: Date.now() }];
+        }
+
+        res.json({ reply, panelUpdates });
     } catch (error) {
         console.error('Execution error:', error.message);
         res.status(500).json({ error: 'Failed to execute action: ' + error.message });
