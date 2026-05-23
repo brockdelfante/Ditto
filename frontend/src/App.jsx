@@ -186,13 +186,29 @@ function Dashboard({ isConnected, activeTab }) {
             <div className="kpi-grid">
               <KpiCard label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
               <KpiCard label="Pipeline" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
-              <KpiCard label="Won" value={fmtNum(deals?.won?.count?.current)} change={deals?.won?.count?.change} />
-              <KpiCard label="Lost" value={fmtNum(deals?.lost?.current)} change={deals?.lost?.change} inverse />
-              <KpiCard label="Win Rate" value={fmtPct(deals?.winRate?.current)} change={deals?.winRate?.change} isPoints />
               <KpiCard label="Avg Deal" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
               {deals?.overdueCount > 0 && (
                 <KpiCard label="Overdue" value={fmtNum(deals?.overdueCount)} change={null} inverse />
               )}
+            </div>
+            <div className="win-loss-row">
+              <div className="wl-item">
+                <span className="wl-label">Won</span>
+                <span className="wl-value">{fmtNum(deals?.won?.count?.current)}</span>
+                <Trend change={deals?.won?.count?.change} />
+              </div>
+              <div className="wl-divider" />
+              <div className="wl-item">
+                <span className="wl-label">Lost</span>
+                <span className="wl-value">{fmtNum(deals?.lost?.current)}</span>
+                <Trend change={deals?.lost?.change} inverse />
+              </div>
+              <div className="wl-divider" />
+              <div className="wl-item">
+                <span className="wl-label">Win Rate</span>
+                <span className="wl-value">{fmtPct(deals?.winRate?.current)}</span>
+                <Trend change={deals?.winRate?.change} isPoints />
+              </div>
             </div>
             {stages.length > 0 && (
               <div className="stage-breakdown">
@@ -208,12 +224,9 @@ function Dashboard({ isConnected, activeTab }) {
           </Section>
 
           {/* Contacts */}
-          <Section title="Contacts" icon="👥" defaultOpen={true}>
+          <Section title="Contacts" icon="👥" defaultOpen={false}>
             <div className="kpi-grid">
               <KpiCard label="New Contacts" value={fmtNum(contacts?.current)} change={contacts?.change} />
-              {activity?.overdueTasks > 0 && (
-                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
-              )}
             </div>
             {sources.length > 0 && (
               <div className="stage-breakdown">
@@ -233,17 +246,15 @@ function Dashboard({ isConnected, activeTab }) {
             <div className="kpi-grid">
               <KpiCard label="Calls" value={fmtNum(activity?.calls?.current)} change={activity?.calls?.change} />
               <KpiCard label="Meetings" value={fmtNum(activity?.meetings?.current)} change={activity?.meetings?.change} />
-              <KpiCard label="Emails" value={fmtNum(activity?.emails?.current)} change={activity?.emails?.change} />
-              <KpiCard label="Notes" value={fmtNum(activity?.notes?.current)} change={activity?.notes?.change} />
               <KpiCard label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
               {activity?.overdueTasks > 0 && (
-                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
+                <KpiCard label="Overdue" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
               )}
             </div>
           </Section>
 
           {/* Marketing */}
-          <Section title="Marketing" icon="📧" defaultOpen={true}>
+          <Section title="Marketing" icon="📧" defaultOpen={false}>
             <div className="kpi-grid">
               <KpiCard label="Email Opens" value={fmtNum(marketing?.emailOpens?.current)} change={marketing?.emailOpens?.change} />
               <KpiCard label="Form Submits" value={fmtNum(marketing?.formSubmissions?.current)} change={marketing?.formSubmissions?.change} />

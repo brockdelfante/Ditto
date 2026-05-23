@@ -491,6 +491,43 @@ body {
 
 /* ── Stage/Source Breakdown ── */
 
+.win-loss-row {
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.5rem 0;
+  margin: 0.4rem 0 0.25rem;
+}
+
+.wl-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.wl-label {
+  font-size: 0.68rem;
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wl-divider {
+  width: 1px;
+  height: 2.2rem;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
 .stage-breakdown {
   padding: 0 0.75rem 0.6rem;
 }
