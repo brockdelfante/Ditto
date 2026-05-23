@@ -160,12 +160,21 @@ router.post('/chat', async (req, res) => {
                 });
             }
 
-            // Separate HubSpot writes from immediate tools
+            // Separate HubSpot writes from immediate tools.
+            // ZB_STATUS-only updates are treated as immediate (no confirmation needed).
+            const isZbStatusOnlyUpdate = (tc) => {
+                try {
+                    const args = JSON.parse(tc.function.arguments || '{}');
+                    const props = args.properties || {};
+                    const propKeys = Object.keys(props).map(k => k.toLowerCase());
+                    return propKeys.length > 0 && propKeys.every(k => k === 'zb_status');
+                } catch { return false; }
+            };
             const hubspotWrites = response.tool_calls.filter(tc =>
-                writeOps.some(op => tc.function.name.toLowerCase().includes(op))
+                writeOps.some(op => tc.function.name.toLowerCase().includes(op)) && !isZbStatusOnlyUpdate(tc)
             );
             const immediateTools = response.tool_calls.filter(tc =>
-                !writeOps.some(op => tc.function.name.toLowerCase().includes(op))
+                !writeOps.some(op => tc.function.name.toLowerCase().includes(op)) || isZbStatusOnlyUpdate(tc)
             );
 
             // Add assistant message with tool_calls to loop context
@@ -286,7 +295,7 @@ router.post('/execute', async (req, res) => {
             toolResults.push({ tool: toolCall.function.name, result });
         }
 
-        const reply = await generateSummary(history, message, toolResults);
+        const reply = await generateSummary(toolResults);
 
         // Auto-generate a panel summary if model didn't call write_to_info_panel
         if (!panelUpdates.length) {
