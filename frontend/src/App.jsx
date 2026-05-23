@@ -141,6 +141,7 @@ function ContactsCard({ current, change, sources }) {
   );
 }
 
+
 function Trend({ change, inverse = false, isPoints = false }) {
   if (change === null || change === undefined) return null;
   const good = inverse ? change < 0 : change > 0;
