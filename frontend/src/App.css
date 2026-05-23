@@ -525,6 +525,14 @@ body {
   color: var(--text);
 }
 
+.wl-trend {
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.wl-trend.kpi-up   { color: var(--green); }
+.wl-trend.kpi-down { color: var(--orange); }
+.wl-trend.kpi-flat { color: var(--subtext); }
+
 .wl-divider {
   width: 1px;
   height: 2.2rem;

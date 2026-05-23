@@ -77,6 +77,16 @@ function KpiCard({ label, value, change, inverse = false, isPoints = false }) {
   );
 }
 
+function Trend({ change, inverse = false, isPoints = false }) {
+  if (change === null || change === undefined) return null;
+  const good = inverse ? change < 0 : change > 0;
+  const cls = good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
+  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '';
+  return (
+    <span className={`wl-trend ${cls}`}>{arrow} {Math.abs(change)}{isPoints ? 'pp' : '%'}</span>
+  );
+}
+
 // ── Info Panel ────────────────────────────────────────────────────────────
 
 function InfoPanel({ items, activeTab }) {
