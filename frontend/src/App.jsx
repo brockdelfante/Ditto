@@ -12,7 +12,7 @@ const QUICK_ACTIONS = [
     { label: 'Manage contact or deal', message: 'I want to manage an existing contact, company or deal.' },
     { label: 'Add new contact', message: 'I want to add a new contact.' },
     { label: 'Log sales activity', message: 'I want to log sales activity.' },
-    { label: 'Bring me up to speed', message: 'Bring me up to speed on a contact.' },
+    { label: 'Background research on a Contact', message: 'Bring me up to speed on a contact.' },
 ];
 
 // ── Formatters ────────────────────────────────────────────────────────────
@@ -71,11 +71,76 @@ function KpiCard({ label, value, change, inverse = false, isPoints = false }) {
   return (
     <div className="kpi-card">
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{value}</div>
-      {badge && <div className={`kpi-badge ${cls}`}>{badge}</div>}
+      <div className="kpi-value-row">
+        <span className="kpi-value">{value}</span>
+        {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
+      </div>
     </div>
   );
 }
+
+function TaskCard({ tasks, tasksChange, overdue }) {
+  const good = tasksChange > 0;
+  const cls = tasksChange === null || tasksChange === undefined ? '' : good ? 'kpi-up' : tasksChange === 0 ? 'kpi-flat' : 'kpi-down';
+  const arrow = tasksChange > 0 ? '▲' : tasksChange < 0 ? '▼' : null;
+  const badge = tasksChange !== null && tasksChange !== undefined
+    ? `${arrow ? arrow + ' ' : ''}${Math.abs(tasksChange)}%`
+    : null;
+  return (
+    <div className="kpi-card task-kpi-card">
+      <div className="kpi-label">Tasks</div>
+      <div className="task-card-body">
+        <div className="kpi-value-row">
+          <span className="kpi-value">{fmtNum(tasks)}</span>
+          {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
+        </div>
+        {overdue > 0 && (
+          <div className="task-overdue">
+            <span className="task-overdue-count">{fmtNum(overdue)}</span>
+            <span className="task-overdue-label">overdue</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContactsCard({ current, change, sources }) {
+  const good = change > 0;
+  const cls = change === null || change === undefined ? '' : good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
+  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : null;
+  const badge = change !== null && change !== undefined
+    ? `${arrow ? arrow + ' ' : ''}${Math.abs(change)}%`
+    : null;
+  const totalNamed = sources.reduce((s, [, c]) => s + c, 0);
+  const unknown = (current || 0) - totalNamed;
+  const allSources = unknown > 0 ? [...sources, ['Unknown', unknown]] : sources;
+  const total = current || 1;
+  return (
+    <div className="contacts-card">
+      <div className="kpi-label">New Contacts</div>
+      <div className="contacts-body">
+        <div className="contacts-main">
+          <div className="kpi-value-row">
+            <span className="kpi-value">{fmtNum(current)}</span>
+            {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
+          </div>
+        </div>
+        {allSources.length > 0 && (
+          <div className="contacts-sources">
+            {allSources.map(([src, count]) => (
+              <div key={src} className="contacts-source-row">
+                <span className="cs-label">{src}</span>
+                <span className="cs-count">{count} <span className="cs-pct">({Math.round(count / total * 100)}%)</span></span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 function Trend({ change, inverse = false, isPoints = false }) {
   if (change === null || change === undefined) return null;
@@ -193,13 +258,11 @@ function Dashboard({ isConnected, activeTab }) {
         <>
           {/* Sales */}
           <Section title="Sales" icon="💼" defaultOpen={true}>
-            <div className="kpi-grid">
+            <div className="kpi-grid kpi-grid--4">
               <KpiCard label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
               <KpiCard label="Pipeline" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
               <KpiCard label="Avg Deal" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
-              {deals?.overdueCount > 0 && (
-                <KpiCard label="Overdue" value={fmtNum(deals?.overdueCount)} change={null} inverse />
-              )}
+              <KpiCard label="Overdue Deals" value={fmtNum(deals?.overdueCount ?? 0)} change={null} inverse={deals?.overdueCount > 0} />
             </div>
             <div className="win-loss-row">
               <div className="wl-item">
@@ -235,20 +298,9 @@ function Dashboard({ isConnected, activeTab }) {
 
           {/* Contacts */}
           <Section title="Contacts" icon="👥" defaultOpen={false}>
-            <div className="kpi-grid">
-              <KpiCard label="New Contacts" value={fmtNum(contacts?.current)} change={contacts?.change} />
+            <div className="contacts-card-wrap">
+              <ContactsCard current={contacts?.current} change={contacts?.change} sources={sources} />
             </div>
-            {sources.length > 0 && (
-              <div className="stage-breakdown">
-                <div className="breakdown-title">By source</div>
-                {sources.map(([src, count]) => (
-                  <div key={src} className="breakdown-row">
-                    <span>{src}</span>
-                    <span>{count}</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </Section>
 
           {/* Activity */}
@@ -258,13 +310,8 @@ function Dashboard({ isConnected, activeTab }) {
               <KpiCard label="Meetings" value={fmtNum(activity?.meetings?.current)} change={activity?.meetings?.change} />
               <KpiCard label="Emails" value={fmtNum(activity?.emails?.current)} change={activity?.emails?.change} />
               <KpiCard label="Notes" value={fmtNum(activity?.notes?.current)} change={activity?.notes?.change} />
-              <KpiCard label="Tasks" value={fmtNum(activity?.tasks?.current)} change={activity?.tasks?.change} />
+              <TaskCard tasks={activity?.tasks?.current} tasksChange={activity?.tasks?.change} overdue={activity?.overdueTasks} />
             </div>
-            {activity?.overdueTasks > 0 && (
-              <div className="kpi-grid" style={{paddingTop: 0}}>
-                <KpiCard label="Overdue Tasks" value={fmtNum(activity?.overdueTasks)} change={null} inverse />
-              </div>
-            )}
           </Section>
 
           {/* Marketing */}

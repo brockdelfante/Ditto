@@ -445,8 +445,14 @@ body {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
+.kpi-grid--4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .kpi-grid--row {
   grid-template-columns: repeat(5, 1fr);
+  gap: 0.3rem;
+  padding: 0.35rem 0.5rem 0.5rem;
 }
 
 .kpi-card {
@@ -458,6 +464,105 @@ body {
   flex-direction: column;
   gap: 0.15rem;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.kpi-grid--row .kpi-card {
+  padding: 0.4rem 0.35rem;
+}
+
+/* ── Task Card (Tasks + Overdue merged) ── */
+
+.task-kpi-card .task-card-body {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.task-overdue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-left: 1px solid #fed7d7;
+  padding-left: 0.35rem;
+  margin-left: auto;
+}
+
+.task-overdue-count {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #c53030;
+  line-height: 1.2;
+}
+
+.task-overdue-label {
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #c53030;
+  font-weight: 700;
+}
+
+/* ── Contacts Card ── */
+
+.contacts-card-wrap {
+  padding: 0.35rem 0.75rem 0.75rem;
+}
+
+.contacts-card {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.contacts-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.contacts-main {
+  flex-shrink: 0;
+}
+
+.contacts-sources {
+  flex: 1;
+  border-left: 1px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+.contacts-source-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.1rem 0;
+  border-bottom: 1px solid #f0f4f8;
+  font-size: 0.72rem;
+}
+.contacts-source-row:last-child { border-bottom: none; }
+
+.cs-label {
+  color: var(--subtext);
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+}
+
+.cs-count {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.cs-pct {
+  font-weight: 400;
+  color: var(--subtext);
+  font-size: 0.68rem;
 }
 .kpi-card:hover {
   border-color: #cbd5e0;
@@ -473,6 +578,13 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.kpi-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  flex-wrap: wrap;
 }
 
 .kpi-value {
@@ -634,7 +746,7 @@ body {
 /* ── Info Panel ── */
 
 .info-panel {
-  width: 280px;
+  width: 360px;
   flex-shrink: 0;
   background: var(--white);
   border-right: 1px solid var(--border);
