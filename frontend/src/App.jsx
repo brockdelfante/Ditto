@@ -1,551 +1,148 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import supabase from './supabase/supabase';
+import Sidebar from './components/Sidebar';
+import ChatView from './components/ChatView';
+import DashboardView from './components/DashboardView';
+import IframeView from './components/IframeView';
+import SettingsModal from './components/SettingsModal';
+import SafeIcon from './common/SafeIcon';
+import * as FiIcons from 'react-icons/fi';
 import './App.css';
 
-const API_BASE = import.meta.env.DEV
-  ? (import.meta.env.VITE_API_BASE || 'http://localhost:3001')
-  : window.location.origin;
+const { FiLoader } = FiIcons;
 
-const STORAGE_KEY = 'ditto_chat_history';
-const REJECTION_KEYWORDS = ['no', 'cancel', 'stop', "don't", 'nope', 'nevermind', 'never mind', 'abort', 'skip', 'forget it'];
-
-const QUICK_ACTIONS = [
-    { label: 'Manage contact or deal', message: 'I want to manage an existing contact, company or deal.' },
-    { label: 'Add new contact', message: 'I want to add a new contact.' },
-    { label: 'Log sales activity', message: 'I want to log sales activity.' },
-    { label: 'Background research on a Contact', message: 'Bring me up to speed on a contact.' },
+const FIXED_TABS = [
+  { id: 'chat', name: 'HubSpot Chat', type: 'fixed' },
+  { id: 'dashboard', name: 'Dashboard', type: 'fixed' },
 ];
 
-// ── Formatters ────────────────────────────────────────────────────────────
+function App() {
+  const [dynamicTabs, setDynamicTabs] = useState([]);
+  const [activeTabId, setActiveTabId] = useState('chat');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-function fmtNum(n) {
-  if (n === null || n === undefined) return '—';
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`;
-  return String(n);
-}
-
-function fmtCur(n) {
-  if (n === null || n === undefined || n === 0) return '$0';
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`;
-  return `$${n}`;
-}
-
-function fmtPct(n) {
-  if (n === null || n === undefined) return '—';
-  return `${n}%`;
-}
-
-function timeAgo(ts) {
-  if (!ts) return '';
-  const diff = Math.floor((Date.now() - ts) / 60000);
-  if (diff < 1) return 'just now';
-  if (diff < 60) return `${diff}m ago`;
-  return `${Math.floor(diff / 60)}h ago`;
-}
-
-// ── Section ───────────────────────────────────────────────────────────────
-
-function Section({ title, icon, children, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="dash-section">
-      <button className="dash-section-header" onClick={() => setOpen(o => !o)}>
-        <span>{icon} {title}</span>
-        <span className="dash-chevron">{open ? '▾' : '▸'}</span>
-      </button>
-      {open && <div className="dash-section-body">{children}</div>}
-    </div>
-  );
-}
-
-// ── KPI Card ──────────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, change, inverse = false, isPoints = false }) {
-  const good = inverse ? change < 0 : change > 0;
-  const cls = change === null || change === undefined ? '' : good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
-  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : null;
-  const badge = change !== null && change !== undefined
-    ? `${arrow ? arrow + ' ' : ''}${Math.abs(change)}${isPoints ? 'pp' : '%'}`
-    : null;
-  return (
-    <div className="kpi-card">
-      <div className="kpi-label">{label}</div>
-      <div className="kpi-value-row">
-        <span className="kpi-value">{value}</span>
-        {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
-      </div>
-    </div>
-  );
-}
-
-function TaskCard({ tasks, tasksChange, overdue }) {
-  const good = tasksChange > 0;
-  const cls = tasksChange === null || tasksChange === undefined ? '' : good ? 'kpi-up' : tasksChange === 0 ? 'kpi-flat' : 'kpi-down';
-  const arrow = tasksChange > 0 ? '▲' : tasksChange < 0 ? '▼' : null;
-  const badge = tasksChange !== null && tasksChange !== undefined
-    ? `${arrow ? arrow + ' ' : ''}${Math.abs(tasksChange)}%`
-    : null;
-  return (
-    <div className="kpi-card task-kpi-card">
-      <div className="kpi-label">Tasks</div>
-      <div className="task-card-body">
-        <div className="kpi-value-row">
-          <span className="kpi-value">{fmtNum(tasks)}</span>
-          {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
-        </div>
-        {overdue > 0 && (
-          <div className="task-overdue">
-            <span className="task-overdue-count">{fmtNum(overdue)}</span>
-            <span className="task-overdue-label">overdue</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ContactsCard({ current, change, sources }) {
-  const good = change > 0;
-  const cls = change === null || change === undefined ? '' : good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
-  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : null;
-  const badge = change !== null && change !== undefined
-    ? `${arrow ? arrow + ' ' : ''}${Math.abs(change)}%`
-    : null;
-  const totalNamed = sources.reduce((s, [, c]) => s + c, 0);
-  const unknown = (current || 0) - totalNamed;
-  const allSources = unknown > 0 ? [...sources, ['Unknown', unknown]] : sources;
-  const total = current || 1;
-  return (
-    <div className="contacts-card">
-      <div className="kpi-label">New Contacts</div>
-      <div className="contacts-body">
-        <div className="contacts-main">
-          <div className="kpi-value-row">
-            <span className="kpi-value">{fmtNum(current)}</span>
-            {badge && <span className={`kpi-badge ${cls}`}>{badge}</span>}
-          </div>
-        </div>
-        {allSources.length > 0 && (
-          <div className="contacts-sources">
-            {allSources.map(([src, count]) => (
-              <div key={src} className="contacts-source-row">
-                <span className="cs-label">{src}</span>
-                <span className="cs-count">{count} <span className="cs-pct">({Math.round(count / total * 100)}%)</span></span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-
-function Trend({ change, inverse = false, isPoints = false }) {
-  if (change === null || change === undefined) return null;
-  const good = inverse ? change < 0 : change > 0;
-  const cls = good ? 'kpi-up' : change === 0 ? 'kpi-flat' : 'kpi-down';
-  const arrow = change > 0 ? '▲' : change < 0 ? '▼' : '';
-  return (
-    <span className={`wl-trend ${cls}`}>{arrow} {Math.abs(change)}{isPoints ? 'pp' : '%'}</span>
-  );
-}
-
-// ── Info Panel ────────────────────────────────────────────────────────────
-
-function InfoPanel({ items, activeTab }) {
-  return (
-    <aside className={`info-panel${activeTab === 'info' ? ' tab-active' : ''}`}>
-      <div className="info-panel-header">
-        <span>Agent Activity</span>
-      </div>
-      <div className="info-panel-body">
-        {!items.length ? (
-          <div className="info-panel-empty">Agent activity and research will appear here.</div>
-        ) : (
-          items.map((item, i) => (
-            <div key={i} className={`info-panel-item info-panel-item--${item.type}`}>
-              {i > 0 && <div className="info-panel-divider" />}
-              {item.type === 'research' ? (
-                <div className="info-panel-research" dangerouslySetInnerHTML={{ __html: item.content }} />
-              ) : (
-                <div className="info-panel-summary">
-                  <p className="info-panel-summary-text">{item.content}</p>
-                  <span className="info-panel-timestamp">
-                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-    </aside>
-  );
-}
-
-// ── Dashboard ─────────────────────────────────────────────────────────────
-
-function Dashboard({ isConnected, activeTab }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchData = useCallback(async (force = false) => {
-    if (!isConnected) return;
-    setLoading(true);
-    setError(null);
+  const fetchTabs = async () => {
     try {
-      const url = force ? `${API_BASE}/api/dashboard?refresh=1` : `${API_BASE}/api/dashboard`;
-      const res = await fetch(url);
-      const json = await res.json();
-      setData(json);
-    } catch (e) {
-      setError('Failed to load dashboard');
+      const { data, error } = await supabase
+        .from('portal_tabs_20240522')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setDynamicTabs(data || []);
+    } catch (error) {
+      console.error('Error fetching tabs:', error.message);
     } finally {
       setLoading(false);
     }
-  }, [isConnected]);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(() => fetchData(), 30 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  if (!isConnected) {
-    return (
-      <aside className={`dashboard-panel${activeTab === 'dashboard' ? ' tab-active' : ''}`}>
-        <div className="dash-topbar"><span>Dashboard</span></div>
-        <div className="dash-not-connected">Connect HubSpot to see your CRM metrics here.</div>
-      </aside>
-    );
-  }
-
-  const d = data;
-  const deals = d?.deals;
-  const activity = d?.activity;
-  const contacts = d?.contacts;
-  const marketing = d?.marketing;
-
-  const stages = deals?.byStage
-    ? Object.entries(deals.byStage).sort((a, b) => b[1] - a[1]).slice(0, 6)
-    : [];
-
-  const sources = contacts?.sources
-    ? Object.entries(contacts.sources).sort((a, b) => b[1] - a[1]).slice(0, 4)
-    : [];
-
-  return (
-    <aside className={`dashboard-panel${activeTab === 'dashboard' ? ' tab-active' : ''}`}>
-      <div className="dash-topbar">
-        <span>Dashboard <span className="dash-period">· last 30d vs prior</span></span>
-        <button className="dash-refresh-btn" onClick={() => fetchData(true)} disabled={loading} title="Refresh">
-          <span className={loading ? 'spinning' : ''}>↻</span>
-        </button>
-      </div>
-
-      {error && <div className="dash-error">{error}</div>}
-
-      {!d && loading && (
-        <div className="dash-skeleton">
-          {[...Array(16)].map((_, i) => <div key={i} className="skel-row" />)}
-        </div>
-      )}
-
-      {d && (
-        <>
-          {/* Sales */}
-          <Section title="Sales" icon="💼" defaultOpen={true}>
-            <div className="kpi-grid kpi-grid--4">
-              <KpiCard label="New Deals" value={fmtNum(deals?.created?.current)} change={deals?.created?.change} />
-              <KpiCard label="Pipeline" value={fmtCur(deals?.pipeline?.current)} change={deals?.pipeline?.change} />
-              <KpiCard label="Avg Deal" value={fmtCur(deals?.avgSize?.current)} change={deals?.avgSize?.change} />
-              <KpiCard label="Overdue Deals" value={fmtNum(deals?.overdueCount ?? 0)} change={null} inverse={deals?.overdueCount > 0} />
-            </div>
-            <div className="win-loss-row">
-              <div className="wl-item">
-                <span className="wl-label">Won</span>
-                <span className="wl-value">{fmtNum(deals?.won?.count?.current)}</span>
-                <Trend change={deals?.won?.count?.change} />
-              </div>
-              <div className="wl-divider" />
-              <div className="wl-item">
-                <span className="wl-label">Lost</span>
-                <span className="wl-value">{fmtNum(deals?.lost?.current)}</span>
-                <Trend change={deals?.lost?.change} inverse />
-              </div>
-              <div className="wl-divider" />
-              <div className="wl-item">
-                <span className="wl-label">Win Rate</span>
-                <span className="wl-value">{fmtPct(deals?.winRate?.current)}</span>
-                <Trend change={deals?.winRate?.change} isPoints />
-              </div>
-            </div>
-            {stages.length > 0 && (
-              <div className="stage-breakdown">
-                <div className="breakdown-title">Pipeline by stage</div>
-                {stages.map(([stage, count]) => (
-                  <div key={stage} className="breakdown-row">
-                    <span>{stage.replace(/_/g, ' ')}</span>
-                    <span>{count}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-
-          {/* Contacts */}
-          <Section title="Contacts" icon="👥" defaultOpen={false}>
-            <div className="contacts-card-wrap">
-              <ContactsCard current={contacts?.current} change={contacts?.change} sources={sources} />
-            </div>
-          </Section>
-
-          {/* Activity */}
-          <Section title="Activity" icon="📞" defaultOpen={true}>
-            <div className="kpi-grid kpi-grid--row">
-              <KpiCard label="Calls" value={fmtNum(activity?.calls?.current)} change={activity?.calls?.change} />
-              <KpiCard label="Meetings" value={fmtNum(activity?.meetings?.current)} change={activity?.meetings?.change} />
-              <KpiCard label="Emails" value={fmtNum(activity?.emails?.current)} change={activity?.emails?.change} />
-              <KpiCard label="Notes" value={fmtNum(activity?.notes?.current)} change={activity?.notes?.change} />
-              <TaskCard tasks={activity?.tasks?.current} tasksChange={activity?.tasks?.change} overdue={activity?.overdueTasks} />
-            </div>
-          </Section>
-
-          {/* Marketing */}
-          <Section title="Marketing" icon="📧" defaultOpen={false}>
-            <div className="kpi-grid">
-              <KpiCard label="Email Opens" value={fmtNum(marketing?.emailOpens?.current)} change={marketing?.emailOpens?.change} />
-              <KpiCard label="Form Submits" value={fmtNum(marketing?.formSubmissions?.current)} change={marketing?.formSubmissions?.change} />
-              <KpiCard label="Page Views" value={fmtNum(marketing?.pageViews?.current)} change={marketing?.pageViews?.change} />
-            </div>
-          </Section>
-        </>
-      )}
-
-      {d && (
-        <div className="dash-footer">Updated {timeAgo(d.fetchedAt)} · auto-refreshes every 30m</div>
-      )}
-    </aside>
-  );
-}
-
-// ── App ───────────────────────────────────────────────────────────────────
-
-function App() {
-  const [messages, setMessages] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-  const [input, setInput] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [hasPendingAction, setHasPendingAction] = useState(false);
-  const [pendingExecutionId, setPendingExecutionId] = useState(null);
-  const chatEndRef = useRef(null);
-  const inputRef = useRef(null);
-  const [panelItems, setPanelItems] = useState([]);
-  const [activeTab, setActiveTab] = useState('chat');
-
-  useEffect(() => { checkStatus(); }, []);
-
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); }
-    catch { /* quota exceeded */ }
-  }, [messages]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const checkStatus = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/auth/status`);
-      const data = await res.json();
-      setIsConnected(data.connected);
-    } catch (e) { console.error('Status check failed', e); }
   };
 
-  const handleSend = async (text = input) => {
-    if (!text.trim() || isLoading) return;
+  useEffect(() => {
+    fetchTabs();
+    const channel = supabase
+      .channel('portal_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'portal_tabs_20240522' }, fetchTabs)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
 
-    const userMsg = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsLoading(true);
-    inputRef.current?.focus();
-
+  const handleAddTab = async () => {
+    const name = prompt('Enter tab name:', `New Tab ${dynamicTabs.length + 1}`);
+    if (!name) return;
     try {
-      if (hasPendingAction) {
-        const isRejection = REJECTION_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
-        const execId = pendingExecutionId;
-        setHasPendingAction(false);
-        setPendingExecutionId(null);
-
-        const res = await fetch(`${API_BASE}/api/execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ approved: !isRejection, message: text, history: messages, executionId: execId })
-        });
-        const data = await res.json();
-        if (data.panelUpdates?.length) {
-          setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
-        }
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
-        return;
-      }
-
-      const res = await fetch(`${API_BASE}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: messages })
-      });
-      const data = await res.json();
-      if (data.panelUpdates?.length) {
-        setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
-      }
-
-      if (data.pendingAction) {
-        setHasPendingAction(true);
-        setPendingExecutionId(data.executionId || null);
-      }
-
-      if (data.reply) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-      } else if (data.error) {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
-      }
+      const { data, error } = await supabase
+        .from('portal_tabs_20240522')
+        .insert([{ name, url: '' }])
+        .select();
+      if (error) throw error;
+      await fetchTabs();
+      if (data?.[0]) setActiveTabId(data[0].id);
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I couldn't connect to the server." }]);
-    } finally {
-      setIsLoading(false);
+      alert('Failed to add tab.');
     }
   };
 
-  const startVoice = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Speech recognition is not supported in this browser.'); return; }
-    if (isRecording) return;
-
-    const r = new SR();
-    r.lang = 'en-US';
-    r.onstart = () => setIsRecording(true);
-    r.onend = () => setIsRecording(false);
-    r.onerror = () => setIsRecording(false);
-    r.onresult = (e) => {
-      const t = e.results[0][0].transcript;
-      setInput(t);
-      handleSend(t);
-    };
-    r.start();
+  const handleRenameTab = async (id, newName) => {
+    try {
+      const { error } = await supabase
+        .from('portal_tabs_20240522')
+        .update({ name: newName })
+        .eq('id', id);
+      if (error) throw error;
+      await fetchTabs();
+    } catch (e) { console.error(e); }
   };
 
-  return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="header-brand">
-          <div className="header-logo">H</div>
-          <span className="header-title">HubSpot Assistant</span>
+  const handleDeleteTab = async (id) => {
+    if (!confirm('Delete this tab?')) return;
+    try {
+      const { error } = await supabase
+        .from('portal_tabs_20240522')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      if (activeTabId === id) setActiveTabId('chat');
+      await fetchTabs();
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSaveUrl = async (newUrl) => {
+    try {
+      const { error } = await supabase
+        .from('portal_tabs_20240522')
+        .update({ url: newUrl })
+        .eq('id', activeTabId);
+      if (error) throw error;
+      await fetchTabs();
+    } catch (e) { alert('Failed to save URL.'); }
+  };
+
+  const activeIframeTab = dynamicTabs.find(t => t.id === activeTabId) || null;
+  const isIframeActive = activeIframeTab !== null;
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gray-950">
+        <div className="flex flex-col items-center gap-4">
+          <SafeIcon icon={FiLoader} className="text-4xl text-indigo-500 animate-spin" />
+          <p className="text-gray-400 font-medium tracking-wide">Loading Ditto...</p>
         </div>
-        <div className="header-actions">
-          {messages.length > 0 && (
-            <button onClick={() => { setMessages([]); setHasPendingAction(false); setPendingExecutionId(null); }} className="btn-ghost">
-              Clear chat
-            </button>
-          )}
-          <button
-            onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
-            className={isConnected ? 'btn-connected' : 'btn-connect'}
-          >
-            <span className={`status-dot ${isConnected ? 'connected' : ''}`} />
-            {isConnected ? 'Connected' : 'Connect HubSpot'}
-          </button>
-        </div>
-      </header>
-
-      <div className="app-body">
-        <InfoPanel items={panelItems} activeTab={activeTab} />
-
-        <section className={`chat-section${activeTab === 'chat' ? ' tab-active' : ''}`}>
-          <div className="chat-window">
-            {messages.length === 0 && (
-              <div className="welcome">
-                <div className="welcome-icon">💬</div>
-                <h2>How can I help?</h2>
-                <p>Ask me anything about your HubSpot CRM — contacts, deals, companies, and campaigns.</p>
-              </div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={`message ${m.role}`}>
-                {m.role === 'assistant' && <div className="msg-avatar">H</div>}
-                <div className="bubble">{m.content}</div>
-              </div>
-            ))}
-            {isLoading && (
-              <div className="message assistant">
-                <div className="msg-avatar">H</div>
-                <div className="bubble typing-indicator"><span /><span /><span /></div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          <div className="quick-actions-bar">
-            {QUICK_ACTIONS.map(action => (
-              <button
-                key={action.label}
-                className="quick-action-btn"
-                onClick={() => handleSend(action.message)}
-                disabled={isLoading || isRecording}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="input-area">
-            <button
-              onClick={startVoice}
-              className={`voice-btn ${isRecording ? 'recording' : ''}`}
-              title={isRecording ? 'Listening...' : 'Talk'}
-              disabled={isLoading}
-            >
-              {isRecording ? '⏹' : '🎤'}
-              <span>{isRecording ? 'Listening' : 'Talk'}</span>
-            </button>
-            <div className="input-wrap">
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                placeholder={hasPendingAction ? 'Reply yes or no...' : 'Ask me anything...'}
-                disabled={isRecording || isLoading}
-              />
-              <button
-                className="send-btn"
-                onClick={() => handleSend()}
-                disabled={!input.trim() || isRecording || isLoading}
-              >
-                {isLoading ? '…' : '↑'}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <Dashboard isConnected={isConnected} activeTab={activeTab} />
       </div>
+    );
+  }
 
-      <nav className="mobile-tab-bar">
-        <button className={activeTab === 'info' ? 'active' : ''} onClick={() => setActiveTab('info')}>Activity</button>
-        <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>Chat</button>
-        <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-      </nav>
+  return (
+    <div className="flex h-screen w-full overflow-hidden">
+      <Sidebar
+        fixedTabs={FIXED_TABS}
+        dynamicTabs={dynamicTabs}
+        activeTabId={activeTabId}
+        onSelect={setActiveTabId}
+        onAdd={handleAddTab}
+        onRename={handleRenameTab}
+        onDelete={handleDeleteTab}
+      />
+
+      <main className="flex-1 overflow-hidden">
+        {activeTabId === 'chat' && <ChatView />}
+        {activeTabId === 'dashboard' && <DashboardView />}
+        {isIframeActive && (
+          <IframeView
+            tab={activeIframeTab}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+          />
+        )}
+      </main>
+
+      {isIframeActive && (
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          currentUrl={activeIframeTab.url}
+          tabName={activeIframeTab.name}
+          onSave={handleSaveUrl}
+        />
+      )}
     </div>
   );
 }
