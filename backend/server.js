@@ -72,7 +72,20 @@ async function handleOAuthCallback(req, res) {
     const success = await exchangeToken(code, codeVerifier, req.session, res);
     if (success) {
       delete req.session.codeVerifier;
-      return res.redirect('/');
+      // Serve a closer page so the popup can notify its opener and self-close.
+      // Falls back to a full redirect if opened outside a popup context.
+      return res.send(`<!DOCTYPE html>
+<html><head><title>Connected</title></head>
+<body>
+<script>
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage('hubspot-auth-success', '*');
+    window.close();
+  } else {
+    window.location.href = '/';
+  }
+</script>
+</body></html>`);
     }
   }
 
