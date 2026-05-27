@@ -64,8 +64,34 @@ export default function ChatView() {
   const [hasPendingAction, setHasPendingAction] = useState(false);
   const [pendingExecutionId, setPendingExecutionId] = useState(null);
   const [panelItems, setPanelItems] = useState([]);
+  const [liveMode, setLiveMode] = useState(false);
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
+  const liveModeRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const prevIsLoadingRef = useRef(false);
+  const startVoiceFnRef = useRef(null);
+  const isSpeakingRef = useRef(false);
+
+  // Keep refs in sync with state
+  useEffect(() => { liveModeRef.current = liveMode; }, [liveMode]);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+  useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+  // Auto-restart mic when agent finishes responding in live mode (fallback when no TTS)
+  useEffect(() => {
+    const wasLoading = prevIsLoadingRef.current;
+    prevIsLoadingRef.current = isLoading;
+    if (wasLoading && !isLoading && liveModeRef.current && !isSpeakingRef.current) {
+      const timer = setTimeout(() => {
+        if (liveModeRef.current && !isLoadingRef.current && !isRecordingRef.current && !isSpeakingRef.current) {
+          startVoiceFnRef.current?.();
+        }
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  });
 
   useEffect(() => { checkStatus(); }, []);
 
@@ -133,7 +159,9 @@ export default function ChatView() {
         if (data.panelUpdates?.length) {
           setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
         }
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
+        const reply = data.reply || data.error;
+        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+        if (liveModeRef.current && data.reply) speak(data.reply);
         return;
       }
 
@@ -154,6 +182,7 @@ export default function ChatView() {
 
       if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+        if (liveModeRef.current) speak(data.reply);
       } else if (data.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
       }
@@ -164,22 +193,55 @@ export default function ChatView() {
     }
   };
 
+  const speak = (text) => {
+    if (!text || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const onDone = () => {
+      isSpeakingRef.current = false;
+      if (liveModeRef.current && !isLoadingRef.current && !isRecordingRef.current) {
+        startVoiceFnRef.current?.();
+      }
+    };
+    utterance.onstart = () => { isSpeakingRef.current = true; };
+    utterance.onend = onDone;
+    utterance.onerror = onDone;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const startVoice = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Speech recognition is not supported in this browser.'); return; }
-    if (isRecording) return;
+    if (isRecordingRef.current) return;
+    window.speechSynthesis?.cancel();
+    isSpeakingRef.current = false;
 
     const r = new SR();
     r.lang = 'en-US';
-    r.onstart = () => setIsRecording(true);
-    r.onend = () => setIsRecording(false);
-    r.onerror = () => setIsRecording(false);
+    r.onstart = () => { setIsRecording(true); isRecordingRef.current = true; };
+    r.onend = () => { setIsRecording(false); isRecordingRef.current = false; };
+    r.onerror = () => { setIsRecording(false); isRecordingRef.current = false; };
     r.onresult = (e) => {
       const t = e.results[0][0].transcript;
       setInput(t);
       handleSend(t);
     };
     r.start();
+  };
+
+  // Store latest startVoice in ref so the auto-restart effect can call it
+  startVoiceFnRef.current = startVoice;
+
+  const toggleLiveMode = () => {
+    const next = !liveMode;
+    setLiveMode(next);
+    liveModeRef.current = next;
+    if (!next) {
+      window.speechSynthesis?.cancel();
+      isSpeakingRef.current = false;
+    } else {
+      startVoice();
+    }
   };
 
   return (
@@ -241,7 +303,7 @@ export default function ChatView() {
                 key={action.label}
                 className="quick-action-btn"
                 onClick={() => handleSend(action.message)}
-                disabled={isLoading || isRecording}
+                disabled={isLoading || isRecording || liveMode}
               >
                 {action.label}
               </button>
@@ -249,15 +311,26 @@ export default function ChatView() {
           </div>
 
           <div className="input-area">
-            <button
-              onClick={startVoice}
-              className={`voice-btn ${isRecording ? 'recording' : ''}`}
-              title={isRecording ? 'Listening...' : 'Talk'}
-              disabled={isLoading}
-            >
-              {isRecording ? '⏹' : '🎤'}
-              <span>{isRecording ? 'Listening' : 'Talk'}</span>
-            </button>
+            <div className="voice-controls">
+              <button
+                onClick={startVoice}
+                className={`voice-btn ${isRecording && !liveMode ? 'recording' : ''}`}
+                title={isRecording ? 'Listening...' : 'Talk (one message)'}
+                disabled={isLoading || liveMode}
+              >
+                {isRecording && !liveMode ? '⏹' : '🎤'}
+                <span>{isRecording && !liveMode ? 'Listening' : 'Talk'}</span>
+              </button>
+              <button
+                onClick={toggleLiveMode}
+                className={`live-btn ${liveMode ? 'live-active' : ''}`}
+                title={liveMode ? 'Stop live mode' : 'Start live conversation'}
+                disabled={isLoading && !liveMode}
+              >
+                {liveMode && isRecording ? '🔴' : '🎙'}
+                <span>{liveMode ? (isRecording ? 'Listening' : 'Live') : 'Live'}</span>
+              </button>
+            </div>
             <div className="input-wrap">
               <input
                 ref={inputRef}
@@ -265,12 +338,12 @@ export default function ChatView() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
                 placeholder={hasPendingAction ? 'Reply yes or no...' : 'Ask me anything...'}
-                disabled={isRecording || isLoading}
+                disabled={isRecording || isLoading || liveMode}
               />
               <button
                 className="send-btn"
                 onClick={() => handleSend()}
-                disabled={!input.trim() || isRecording || isLoading}
+                disabled={!input.trim() || isRecording || isLoading || liveMode}
               >
                 {isLoading ? '…' : '↑'}
               </button>
