@@ -72,19 +72,20 @@ export default function ChatView() {
   const isLoadingRef = useRef(false);
   const prevIsLoadingRef = useRef(false);
   const startVoiceFnRef = useRef(null);
+  const isSpeakingRef = useRef(false);
 
   // Keep refs in sync with state
   useEffect(() => { liveModeRef.current = liveMode; }, [liveMode]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
   useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
-  // Auto-restart mic when agent finishes responding in live mode
+  // Auto-restart mic when agent finishes responding in live mode (fallback when no TTS)
   useEffect(() => {
     const wasLoading = prevIsLoadingRef.current;
     prevIsLoadingRef.current = isLoading;
-    if (wasLoading && !isLoading && liveModeRef.current) {
+    if (wasLoading && !isLoading && liveModeRef.current && !isSpeakingRef.current) {
       const timer = setTimeout(() => {
-        if (liveModeRef.current && !isLoadingRef.current && !isRecordingRef.current) {
+        if (liveModeRef.current && !isLoadingRef.current && !isRecordingRef.current && !isSpeakingRef.current) {
           startVoiceFnRef.current?.();
         }
       }, 700);
@@ -158,7 +159,9 @@ export default function ChatView() {
         if (data.panelUpdates?.length) {
           setPanelItems(prev => [...data.panelUpdates.reverse(), ...prev]);
         }
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || data.error }]);
+        const reply = data.reply || data.error;
+        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+        if (liveModeRef.current && data.reply) speak(data.reply);
         return;
       }
 
@@ -179,6 +182,7 @@ export default function ChatView() {
 
       if (data.reply) {
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+        if (liveModeRef.current) speak(data.reply);
       } else if (data.error) {
         setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${data.error}` }]);
       }
@@ -189,10 +193,28 @@ export default function ChatView() {
     }
   };
 
+  const speak = (text) => {
+    if (!text || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const onDone = () => {
+      isSpeakingRef.current = false;
+      if (liveModeRef.current && !isLoadingRef.current && !isRecordingRef.current) {
+        startVoiceFnRef.current?.();
+      }
+    };
+    utterance.onstart = () => { isSpeakingRef.current = true; };
+    utterance.onend = onDone;
+    utterance.onerror = onDone;
+    window.speechSynthesis.speak(utterance);
+  };
+
   const startVoice = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Speech recognition is not supported in this browser.'); return; }
     if (isRecordingRef.current) return;
+    window.speechSynthesis?.cancel();
+    isSpeakingRef.current = false;
 
     const r = new SR();
     r.lang = 'en-US';
@@ -214,8 +236,11 @@ export default function ChatView() {
     const next = !liveMode;
     setLiveMode(next);
     liveModeRef.current = next;
-    if (next) {
-      startVoice(); // start listening immediately when enabling live mode
+    if (!next) {
+      window.speechSynthesis?.cancel();
+      isSpeakingRef.current = false;
+    } else {
+      startVoice();
     }
   };
 
