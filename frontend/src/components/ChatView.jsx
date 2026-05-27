@@ -31,7 +31,12 @@ function InfoPanel({ items }) {
                 <div className="info-panel-research" dangerouslySetInnerHTML={{ __html: item.content }} />
               ) : (
                 <div className="info-panel-summary">
-                  <p className="info-panel-summary-text">{item.content}</p>
+                  {item.content.split('------').map((section, si) => (
+                    <React.Fragment key={si}>
+                      {si > 0 && <div className="info-panel-divider" />}
+                      <p className="info-panel-summary-text">{section.trim()}</p>
+                    </React.Fragment>
+                  ))}
                   <span className="info-panel-timestamp">
                     {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>

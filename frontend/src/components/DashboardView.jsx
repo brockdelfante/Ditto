@@ -250,7 +250,7 @@ export default function DashboardView() {
             )}
           </Section>
 
-          <Section title="Contacts" icon="👥" defaultOpen={false}>
+          <Section title="Contacts" icon="👥" defaultOpen={true}>
             <div className="contacts-card-wrap">
               <ContactsCard current={contacts?.current} change={contacts?.change} sources={sources} />
             </div>
@@ -266,7 +266,7 @@ export default function DashboardView() {
             </div>
           </Section>
 
-          <Section title="Marketing" icon="📧" defaultOpen={false}>
+          <Section title="Marketing" icon="📧" defaultOpen={true}>
             <div className="kpi-grid">
               <KpiCard label="Email Opens" value={fmtNum(marketing?.emailOpens?.current)} change={marketing?.emailOpens?.change} />
               <KpiCard label="Form Submits" value={fmtNum(marketing?.formSubmissions?.current)} change={marketing?.formSubmissions?.change} />
