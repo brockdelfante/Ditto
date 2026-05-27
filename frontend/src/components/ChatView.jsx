@@ -81,6 +81,28 @@ export default function ChatView() {
     } catch (e) { console.error('Status check failed', e); }
   };
 
+  const handleConnect = () => {
+    const popup = window.open(
+      `${API_BASE}/auth/hubspot`,
+      'hubspot-auth',
+      'width=600,height=700,scrollbars=yes,resizable=yes'
+    );
+
+    if (!popup) {
+      // Popup was blocked — fall back to same-window navigation
+      window.location.href = `${API_BASE}/auth/hubspot`;
+      return;
+    }
+
+    const onMessage = (event) => {
+      if (event.data === 'hubspot-auth-success') {
+        setIsConnected(true);
+        window.removeEventListener('message', onMessage);
+      }
+    };
+    window.addEventListener('message', onMessage);
+  };
+
   const handleSend = async (text = input) => {
     if (!text.trim() || isLoading) return;
 
@@ -172,7 +194,7 @@ export default function ChatView() {
             </button>
           )}
           <button
-            onClick={() => window.location.href = `${API_BASE}/auth/hubspot`}
+            onClick={handleConnect}
             className={isConnected ? 'btn-connected' : 'btn-connect'}
           >
             <span className={`status-dot ${isConnected ? 'connected' : ''}`} />
