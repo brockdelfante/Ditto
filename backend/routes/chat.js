@@ -12,7 +12,7 @@ const pendingActions = new Map();
 const SYNTHETIC_TOOLS = [
     {
         name: 'validate_email',
-        description: "Validate an email address before adding or updating a HubSpot contact. Returns status (valid/invalid/disposable/unknown), reason, and domain. Always call before creating a contact. Call on lookup/update if contact's ZB_STATUS is missing.",
+        description: "Validate an email address before creating a new HubSpot contact. Returns status: 'valid', 'invalid', 'disposable', 'unknown', 'accept_all', or 'catch_all'. Call before creating a contact. Also call on lookup/update if contact's ZB_STATUS property is missing or empty. Do NOT call if ZB_STATUS is already set on the contact.",
         inputSchema: {
             type: 'object',
             properties: {
@@ -23,12 +23,12 @@ const SYNTHETIC_TOOLS = [
     },
     {
         name: 'write_to_info_panel',
-        description: 'Send content to the Agent Information Panel. Call after completing any action (Pathways 1-3) with type "summary" and plain text. Call after Pathway 4 research with type "research" and structured HTML.',
+        description: 'Log completed actions to the Agent Activity panel. Call once after completing any Pathway 1/2/3 action with type "summary". Use short declarative statements (one per line), separating distinct steps with "------" on its own line. Call once after Pathway 4 with type "research" and structured HTML. Do NOT call for reads or searches that did not complete a write action.',
         inputSchema: {
             type: 'object',
             properties: {
-                content: { type: 'string', description: 'HTML or plain text content to display' },
-                type: { type: 'string', enum: ['summary', 'research'], description: '"summary" for action summaries, "research" for Pathway 4 HTML' }
+                content: { type: 'string', description: 'Plain text content with "------" separators between steps (summary), or structured HTML (research)' },
+                type: { type: 'string', enum: ['summary', 'research'], description: '"summary" for action logs, "research" for Pathway 4 HTML briefings' }
             },
             required: ['content', 'type']
         }
@@ -108,7 +108,7 @@ function dateFilters(from, to) {
     return f;
 }
 
-async function getTools(session, hubspot) {
+async function getAllTools(session, hubspot) {
     const TOOLS_TTL = 10 * 60 * 1000;
     const cache = session.toolsCache;
     let hubspotTools;
@@ -120,6 +120,55 @@ async function getTools(session, hubspot) {
     }
     const tavilyTools = await getTavilyTools();
     return [...hubspotTools, ...tavilyTools, ...SYNTHETIC_TOOLS];
+}
+
+// Detect which pathway is active from recent conversation history
+function detectPathway(messages) {
+    const recent = messages.slice(-8).map(m =>
+        typeof m.content === 'string' ? m.content.toLowerCase() : ''
+    ).join(' ');
+    if (recent.includes('bring me up to speed') || recent.includes('background research')) return 4;
+    if (recent.includes('log sales') || recent.includes('log activity')) return 3;
+    if (recent.includes('add a new contact') || recent.includes('add new contact')) return 2;
+    if (recent.includes('manage an existing') || recent.includes('manage contact') || recent.includes('manage a contact')) return 1;
+    return 0;
+}
+
+// Scope tools to what the active pathway actually needs
+function scopeToolsForPathway(allTools, pathway, tavilyToolNames) {
+    const name = t => t.name.toLowerCase();
+    const isSearch = t => name(t).includes('search');
+    const isRead = t => ['get', 'list', 'retrieve', 'fetch'].some(k => name(t).includes(k));
+    const isWrite = t => ['manage', 'create', 'update', 'delete', 'upsert'].some(k => name(t).includes(k));
+    const isEngagement = t => ['engagement', 'note', 'task', 'meeting', 'call'].some(k => name(t).includes(k));
+    const isTavily = t => tavilyToolNames.includes(t.name);
+
+    switch (pathway) {
+        case 1: // Manage existing contact/company/deal — read + write, no Tavily
+            return allTools.filter(t =>
+                isSearch(t) || isRead(t) || isWrite(t) ||
+                t.name === 'validate_email' || t.name === 'write_to_info_panel'
+            );
+        case 2: // Add new contact — search + create + validate + Tavily for domain lookup
+            return allTools.filter(t =>
+                isSearch(t) || (isWrite(t) && !isEngagement(t)) ||
+                t.name === 'validate_email' || isTavily(t) || t.name === 'write_to_info_panel'
+            );
+        case 3: // Log activity — search + read + all write (engagements)
+            return allTools.filter(t =>
+                isSearch(t) || isRead(t) || isWrite(t) ||
+                t.name === 'validate_email' || t.name === 'write_to_info_panel'
+            );
+        case 4: // Research — search + read + Tavily, no writes
+            return allTools.filter(t =>
+                isSearch(t) || isRead(t) || isTavily(t) || t.name === 'write_to_info_panel'
+            );
+        default: // General — read-only until a pathway is established
+            return allTools.filter(t =>
+                isSearch(t) || isRead(t) ||
+                t.name === 'validate_email' || t.name === 'write_to_info_panel'
+            );
+    }
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────
@@ -134,7 +183,8 @@ router.post('/chat', async (req, res) => {
 
     try {
         const hubspot = new HubSpotMCPClient(req.session);
-        const tools = await getTools(req.session, hubspot);
+        const allTools = await getAllTools(req.session, hubspot);
+        const tavilyToolNames = (await getTavilyTools()).map(t => t.name);
 
         const writeOps = ['manage_crm_objects', 'create', 'update', 'delete', 'upsert'];
         const MAX_LOOPS = 8;
@@ -146,16 +196,18 @@ router.post('/chat', async (req, res) => {
         let loopCount = 0;
 
         while (loopCount < MAX_LOOPS) {
+            const pathway = detectPathway(loopMessages);
+            const tools = scopeToolsForPathway(allTools, pathway, tavilyToolNames);
+
             const response = await getChatCompletion(loopMessages, tools);
-            console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0, 'loop:', loopCount);
+            console.log('LLM response tool_calls:', response.tool_calls?.length ?? 0, 'loop:', loopCount, 'pathway:', pathway);
             loopCount++;
 
             if (!response.tool_calls?.length) {
-                const proposalPhrases = ['shall i', 'want me to', 'should i', 'would you like me to', 'go ahead', 'proceed', 'shall we', 'like me to'];
-                const pendingAction = proposalPhrases.some(p => response.content?.toLowerCase().includes(p));
+                // No tool calls — this is a plain text reply (question, clarification, or final answer)
                 return res.json({
                     reply: response.content,
-                    pendingAction,
+                    pendingAction: false,
                     panelUpdates: panelUpdates.length ? panelUpdates : undefined
                 });
             }
@@ -244,22 +296,11 @@ router.post('/execute', async (req, res) => {
         const pending = executionId ? pendingActions.get(executionId) : null;
         if (executionId) pendingActions.delete(executionId);
 
-        // Support both old format (array) and new format ({ toolCalls, panelUpdates })
-        let toolsToCall = Array.isArray(pending) ? pending : pending?.toolCalls;
+        const toolsToCall = Array.isArray(pending) ? pending : pending?.toolCalls;
         let panelUpdates = Array.isArray(pending) ? [] : (pending?.panelUpdates || []);
 
-        if (!toolsToCall) {
-            // Model described an action in text without a tool_call — re-invoke to generate one
-            const tools = await getTools(req.session, hubspot);
-            const messages = [
-                ...history.map(m => ({ role: m.role, content: m.content })),
-                { role: 'user', content: message || 'Yes, go ahead.' }
-            ];
-            const response = await getChatCompletion(messages, tools, true);
-            if (!response.tool_calls?.length) {
-                return res.status(400).json({ error: "I couldn't work out what action to take. Could you describe it again?" });
-            }
-            toolsToCall = response.tool_calls;
+        if (!toolsToCall?.length) {
+            return res.json({ reply: "I'm not sure what action to take. Could you describe what you'd like me to do?" });
         }
 
         const toolResults = [];
@@ -273,7 +314,10 @@ router.post('/execute', async (req, res) => {
                 }
             } catch (err) {
                 // Auto-retry: pass error back to LLM to fix arguments
-                const tools = await getTools(req.session, hubspot);
+                const allTools = await getAllTools(req.session, hubspot);
+                const tavilyToolNames = (await getTavilyTools()).map(t => t.name);
+                const pathway = detectPathway(history.map(m => ({ content: m.content })));
+                const tools = scopeToolsForPathway(allTools, pathway, tavilyToolNames);
                 const retryMessages = [
                     ...history.map(m => ({ role: m.role, content: m.content })),
                     { role: 'user', content: message || 'Yes, go ahead.' },
@@ -410,7 +454,6 @@ router.get('/dashboard', async (req, res) => {
         sourceMap[src] = (sourceMap[src] || 0) + 1;
     });
 
-    // Campaign analytics — email opens
     const parseCampaignOpens = (raw) => {
         const r = parseResult(raw);
         if (!r) return 0;
@@ -420,7 +463,6 @@ router.get('/dashboard', async (req, res) => {
     const currEmailOpens = parseCampaignOpens(currCampaigns);
     const prevEmailOpens = parseCampaignOpens(prevCampaigns);
 
-    // Campaign asset metrics — form submissions & page views
     const parseAssetMetric = (raw, key) => {
         const r = parseResult(raw);
         if (!r) return 0;
